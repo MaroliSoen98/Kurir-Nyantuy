@@ -1,5 +1,6 @@
 import 'package:flame/components.dart';
 import 'package:flame/collisions.dart';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import '../kurir_game.dart';
 
@@ -8,6 +9,7 @@ class Coin extends SpriteComponent with HasGameRef<KurirGame> {
   double worldY = -30; // Melayang sedikit di atas jalan
   double worldZ;
   final Vector2 baseSize;
+  late final CircleHitbox hitbox;
 
   Coin({required this.worldX, required this.worldZ, required this.baseSize})
     : super(anchor: Anchor.center);
@@ -25,7 +27,8 @@ class Coin extends SpriteComponent with HasGameRef<KurirGame> {
     }
     paint.filterQuality = FilterQuality.none;
 
-    add(RectangleHitbox());
+    hitbox = CircleHitbox();
+    add(hitbox);
   }
 
   @override
@@ -43,10 +46,15 @@ class Coin extends SpriteComponent with HasGameRef<KurirGame> {
 
     // Proyeksi Skala Pseudo-3D
     final scale = gameRef.getScale(worldZ);
-    size = baseSize * scale;
-    position = Vector2(
+    // Gunakan setValues untuk mencegah GC lag
+    size.setValues(baseSize.x * 4.0 * scale, baseSize.y * 4.0 * scale);
+    position.setValues(
       (gameRef.size.x / 2) + (worldX * scale),
       gameRef.horizonY + ((gameRef.cameraHeight + worldY) * scale),
     );
+
+    // Sesuaikan radius hitbox agar 70% dari ukuran sprite untuk kolisi yang lebih presisi.
+    // Operasi ini sangat ringan dan tidak akan mempengaruhi performa.
+    hitbox.radius = (min(size.x, size.y) / 2) * 0.7;
   }
 }

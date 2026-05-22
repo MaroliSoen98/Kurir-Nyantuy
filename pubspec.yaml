@@ -55,7 +55,12 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/images/
+    - assets/images/ # Pastikan file clouds.png ada di dalam folder ini
+
+  fonts:
+    - family: LuckiestGuy
+      fonts:
+        - asset: assets/fonts/LuckiestGuy-Regular.ttf
 
 
   # To add assets to your application, add an assets section, like this:

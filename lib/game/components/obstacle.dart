@@ -11,9 +11,15 @@ class Obstacle extends PositionComponent with HasGameRef<KurirGame> {
   final Vector2 baseSize;
   final bool isSmall; // Membedakan rintangan ringan dan fatal
   final bool isFloating; // Membedakan rintangan melayang (Portal)
+  final double depthZ; // Kedalaman rintangan ke belakang
+  final bool canDrift; // Penentu apakah emak-emak boleh pindah jalur
 
   Sprite? sprite;
+  Sprite? spriteDepan;
+  Sprite? spriteTengah;
+  Sprite? spriteBelakang;
   late Paint fallbackPaint;
+  late final RectangleHitbox hitbox;
 
   static final Random _sharedRandom = Random(); // Random global untuk efisiensi
 
@@ -58,12 +64,20 @@ class Obstacle extends PositionComponent with HasGameRef<KurirGame> {
     const Radius.circular(12),
   );
 
+  // Objek Statis Anti-Lag untuk proses render Z-Sliced 2.5D
+  static final Path _trenchPath = Path();
+  static final Vector2 _cachedRenderPos = Vector2.zero();
+  static final Vector2 _cachedRenderSize = Vector2.zero();
+  static final Vector2 _zeroVec = Vector2.zero();
+
   Obstacle({
     required this.worldX,
     required this.worldZ,
     required this.baseSize,
     this.isSmall = false,
     this.isFloating = false,
+    this.depthZ = 0.0,
+    this.canDrift = true,
   }) : targetWorldX = worldX,
        super(anchor: Anchor.bottomCenter) {
     if (isFloating) {
@@ -71,7 +85,7 @@ class Obstacle extends PositionComponent with HasGameRef<KurirGame> {
     }
 
     // Logika Emak-emak Chaotic (Pindah Jalur Mendadak)
-    if (!isSmall && !isFloating) {
+    if (!isSmall && !isFloating && canDrift) {
       if (_sharedRandom.nextDouble() < 0.50) {
         // 50% kemungkinan obstacle besar nge-drift, 50% tetap lurus (Sangat tak tertebak!)
         isEmakEmak = true;
@@ -97,44 +111,126 @@ class Obstacle extends PositionComponent with HasGameRef<KurirGame> {
     // Simpan warna kotak sebagai cadangan jika gambar belum siap
     fallbackPaint = Paint()
       ..color = isFloating
-          ? Colors.blueGrey
-          : (isSmall ? Colors.brown : Colors.redAccent);
+          ? Colors
+                .blueGrey // Portal
+          : (isSmall
+                ? Colors.pink.shade100
+                : Colors.redAccent); // Galian vs Ibu-ibu
   }
 
   @override
   Future<void> onLoad() async {
     super.onLoad();
 
-    // Coba muat gambar sprite, jika gagal maka akan tetap null dan pakai warna fallback
+    // Muat gambar sprite jika ada. Rintangan 'galian' (isSmall) tidak punya
+    // gambar dan akan menggunakan warna fallback (pink muda).
     try {
-      String imageName = isFloating
-          ? 'portal.png'
-          : (isSmall ? 'kucing.png' : 'ibumotor.png');
-      sprite = Sprite(
-        gameRef.images.fromCache(imageName),
-      ); // Panggil Instan dari Cache
+      if (isSmall && depthZ > 0) {
+        // Load 3 layer terpisah khusus untuk Galian 2.5D Z-Sliced
+        spriteDepan = Sprite(gameRef.images.fromCache('galian_depan.png'));
+        spriteTengah = Sprite(gameRef.images.fromCache('galian_tengah.png'));
+        spriteBelakang = Sprite(
+          gameRef.images.fromCache('galian_belakang.png'),
+        );
+      } else {
+        String imageName = isFloating ? 'portal.png' : 'ibumotor.png';
+        sprite = Sprite(gameRef.images.fromCache(imageName));
+      }
     } catch (e) {
       // Jangan print error agar terminal tidak spam, game otomatis pakai kotak warna
     }
 
-    // Tambahkan Hitbox untuk deteksi tabrakan yang pas dengan ukuran kotak
-    add(RectangleHitbox());
+    // Tambahkan Hitbox yang ukurannya akan di-update setiap frame agar selalu akurat
+    hitbox = RectangleHitbox();
+    add(hitbox);
   }
 
   @override
   void render(Canvas canvas) {
     super.render(canvas);
 
-    if (sprite != null) {
-      // Render gambar pixel art jika asetnya sudah ada
-      sprite!.render(
-        canvas,
-        size: size,
-        overridePaint: _pixelPaint, // Gunakan paint statis (ANTI LAG)
-      );
+    if (depthZ > 0 && !isFloating) {
+      final clampedZFront = max(-200.0, worldZ);
+      final scaleFront = gameRef.getScale(clampedZFront);
+      final frontScreenX = (gameRef.size.x / 2) + (worldX * scaleFront);
+      final frontScreenY =
+          gameRef.horizonY + ((gameRef.cameraHeight + worldY) * scaleFront);
+
+      if (spriteDepan != null &&
+          spriteTengah != null &&
+          spriteBelakang != null) {
+        // --- SISTEM 2.5D Z-SLICING ---
+        // Menggambar objek berdasarkan kedalaman murni. Tidak butuh pemotongan (ClipPath)
+        // sehingga cone dan barikade bisa pop-out menonjol ke luar aspal dengan sangat realistis!
+        void drawZLayer(Sprite spr, double zPos) {
+          if (zPos < -200) return; // Abaikan jika sudah di belakang layar
+
+          double clampedZ = max(-200.0, zPos);
+          double s = gameRef.getScale(clampedZ);
+
+          // Lebar menyesuaikan skala, tinggi proporsional asli (Anti-Gepeng)
+          double w = baseSize.x * s;
+          double h = w * (spr.image.height / spr.image.width);
+
+          double screenX = (gameRef.size.x / 2) + (worldX * s);
+          double screenY =
+              gameRef.horizonY + ((gameRef.cameraHeight + worldY) * s);
+
+          double localCenterX = (screenX - frontScreenX) + size.x / 2;
+          double localBottomY = (screenY - frontScreenY) + size.y;
+
+          _cachedRenderPos.setValues(localCenterX - w / 2, localBottomY - h);
+          _cachedRenderSize.setValues(w, h);
+
+          spr.render(
+            canvas,
+            position: _cachedRenderPos,
+            size: _cachedRenderSize,
+            overridePaint: _pixelPaint,
+          );
+        }
+
+        // 1. Render Bagian Paling Belakang
+        drawZLayer(spriteBelakang!, worldZ + depthZ);
+
+        // 2. Render Bagian Tengah (Berulang dengan jarak SANGAT RAPAT)
+        // Kita ubah jarak antar potongan menjadi 25.0 agar layering-nya tumpang tindih padat.
+        // Semakin rapat, ilusi 3D (volume galian) akan semakin menyatu dan tidak terputus.
+        double layerSpacing = 25.0;
+        int numMiddleTiles = max(1, (depthZ / layerSpacing).round());
+        double step = depthZ / (numMiddleTiles + 1);
+
+        for (int i = numMiddleTiles; i >= 1; i--) {
+          drawZLayer(spriteTengah!, worldZ + (i * step));
+        }
+
+        // 3. Render Bagian Paling Depan
+        drawZLayer(spriteDepan!, worldZ);
+      } else {
+        // Fallback jika gambar rusak/belum load
+        final clampedZBack = max(-200.0, worldZ + depthZ);
+        final scaleBack = gameRef.getScale(clampedZBack);
+        final widthBack = baseSize.x * scaleBack;
+        final widthFront = baseSize.x * scaleFront;
+        final shiftX = worldX * (scaleBack - scaleFront);
+
+        _trenchPath.reset();
+        _trenchPath
+          ..moveTo((size.x / 2) + shiftX - (widthBack / 2), 0)
+          ..lineTo((size.x / 2) + shiftX + (widthBack / 2), 0)
+          ..lineTo((size.x / 2) + (widthFront / 2), size.y)
+          ..lineTo((size.x / 2) - (widthFront / 2), size.y)
+          ..close();
+
+        canvas.drawPath(_trenchPath, fallbackPaint);
+      }
     } else {
-      // Render kotak warna jika asetnya belum ada
-      canvas.drawRect(size.toRect(), fallbackPaint);
+      // Render Obstacle Biasa (Bukan galian)
+      if (sprite != null) {
+        sprite!.render(canvas, size: size, overridePaint: _pixelPaint);
+      } else {
+        canvas.drawRect(size.toRect(), fallbackPaint);
+      }
     }
 
     // Render efek pop-up teks meme yang nge-blink saat belok
@@ -174,7 +270,7 @@ class Obstacle extends PositionComponent with HasGameRef<KurirGame> {
       _senPaint.render(
         canvas,
         memeText!,
-        Vector2.zero(), // Tepat di tengah bubble berkat Offset.zero
+        _zeroVec, // Menggunakan static vector agar tidak mengalokasi memory baru tiap frame
         anchor: Anchor.center, // Centering text sempurna
       );
       canvas.restore();
@@ -188,8 +284,8 @@ class Obstacle extends PositionComponent with HasGameRef<KurirGame> {
     // Gerakkan rintangan mendekat ke posisi kamera (Z berkurang)
     worldZ -= gameRef.gameSpeed * dt;
 
-    // Hapus rintangan jika sudah melewati batas belakang layar
-    if (worldZ < -100) {
+    // Hapus rintangan jika seluruh bagiannya melewati batas belakang layar
+    if (worldZ + depthZ < -200) {
       removeFromParent();
       return;
     }
@@ -221,11 +317,46 @@ class Obstacle extends PositionComponent with HasGameRef<KurirGame> {
     }
 
     // Terapkan Proyeksi Skala Pseudo-3D
-    final scale = gameRef.getScale(worldZ);
-    size = baseSize * scale;
-    position = Vector2(
+    final clampedZ = max(-200.0, worldZ);
+    final scale = gameRef.getScale(clampedZ);
+
+    double compWidth = baseSize.x * scale;
+    double compHeight = baseSize.y * scale;
+
+    if (depthZ > 0 && !isFloating) {
+      // Wajib mengunci tinggi kotak komponen tepat dari ujung depan ke ujung belakang aspal
+      final clampedZBack = max(-200.0, worldZ + depthZ);
+      final scaleBack = gameRef.getScale(clampedZBack);
+      final yFront =
+          gameRef.horizonY + ((gameRef.cameraHeight + worldY) * scale);
+      final yBack =
+          gameRef.horizonY + ((gameRef.cameraHeight + worldY) * scaleBack);
+      compHeight = max(1.0, yFront - yBack);
+    }
+
+    size.setValues(compWidth, compHeight);
+    position.setValues(
       (gameRef.size.x / 2) + (worldX * scale),
       gameRef.horizonY + ((gameRef.cameraHeight + worldY) * scale),
     );
+
+    // Update ukuran dan posisi hitbox agar sesuai dengan skala visual.
+    double hWidth = compWidth * 0.9;
+    double hHeight = compHeight * 0.9;
+
+    if (isFloating) {
+      hHeight += 300 * scale;
+      hitbox.size.setValues(hWidth, hHeight);
+      hitbox.position.setValues((size.x - hWidth) / 2, size.y - hHeight);
+    } else if (depthZ > 0) {
+      // Untuk galian, hitbox presisi menggunakan ukuran 3D hasil proyeksi
+      hWidth = size.x;
+      hHeight = size.y;
+      hitbox.size.setValues(hWidth, hHeight);
+      hitbox.position.setValues(0, 0);
+    } else {
+      hitbox.size.setValues(hWidth, hHeight);
+      hitbox.position.setValues((size.x - hWidth) / 2, size.y - hHeight);
+    }
   }
 }

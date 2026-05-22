@@ -3,15 +3,18 @@ import 'package:flame/collisions.dart';
 import 'package:flame/effects.dart';
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
+import 'dart:math';
 import '../kurir_game.dart';
 import 'obstacle.dart';
 import 'coin.dart';
+import 'coin_particle.dart';
 
 class Player extends SpriteComponent
     with HasGameRef<KurirGame>, CollisionCallbacks {
   // -1: Kiri, 0: Tengah, 1: Kanan
   int currentLane = 0;
-  double laneSpacing = 180.0;
+  double laneSpacing =
+      175.0; // Disesuaikan agar posisi motor terasa lebih di tengah lajur
 
   // Koordinat Posisi di Ruang 3D
   double worldX = 0;
@@ -27,6 +30,8 @@ class Player extends SpriteComponent
   // Fisika Nunduk (Slide)
   bool isSliding = false;
   double slideTimer = 0;
+  double slideYOffset = 0; // Offset visual saat nunduk
+  double shakeTimer = 0; // Timer untuk efek goncangan tanpa membebani posisi 3D
 
   bool hasShield = false; // Status Shield/Booster Aktif
   bool isInvincible = false;
@@ -36,6 +41,10 @@ class Player extends SpriteComponent
     110,
     150,
   ); // Diperbesar agar proporsional di lajur
+
+  // Variabel untuk menyimpan sprite yang sudah di-load agar bisa diganti-ganti
+  Sprite? _spriteNormal;
+  Sprite? _spriteNunduk;
 
   // Untuk sementara kita pakai kotak warna sebagai placeholder aset pixel motor
   Player()
@@ -51,14 +60,32 @@ class Player extends SpriteComponent
 
     // Mengambil gambar dari Cache secara Sinkron/Instan (Tanpa Await)
     try {
-      sprite = Sprite(gameRef.images.fromCache('motor.png'));
+      _spriteNormal = Sprite(gameRef.images.fromCache('motor.png'));
+      _spriteNunduk = Sprite(gameRef.images.fromCache('motor_nunduk.png'));
+      sprite = _spriteNormal; // Atur sprite awal ke kondisi normal
     } catch (e) {
-      debugPrint("Sprite motor.png tidak ditemukan di cache.");
+      debugPrint("Sprite motor tidak ditemukan di cache: $e");
     }
     paint.filterQuality = FilterQuality.none; // Mencegah pixel art menjadi blur
 
     // Tambahkan Hitbox untuk deteksi tabrakan
-    add(RectangleHitbox());
+    // Hitbox dibuat lebih kecil dari ukuran sprite untuk deteksi yang lebih presisi,
+    // mengabaikan area transparan di sekitar gambar. Ini membuat tabrakan terasa lebih adil.
+    final hitboxSize = Vector2(
+      baseSize.x * 0.5, // 50% dari lebar asli
+      baseSize.y * 0.8, // 80% dari tinggi asli
+    );
+    add(
+      RectangleHitbox(
+        size: hitboxSize,
+        // Posisikan hitbox agar terpusat di tengah secara horizontal dan menempel di bawah.
+        // Hitbox dihitung dari pojok KIRI-ATAS komponen, bukan dari anchor-nya.
+        position: Vector2(
+          (baseSize.x - hitboxSize.x) / 2,
+          baseSize.y - hitboxSize.y,
+        ),
+      ),
+    );
   }
 
   void moveLeft() {
@@ -102,18 +129,29 @@ class Player extends SpriteComponent
     // Hitung jarak sisa ke lajur tujuan
     final double dx = targetWorldX - worldX;
 
-    // Lerp transisi pindah lane (Smoothed movement) - Diperlambat dari 15 ke 10 agar lebih natural
-    worldX += dx * 10 * dt;
+    // Lerp perpindahan lajur dengan perlindungan terhadap Lag Spike / initial loading
+    final double lerpFactor = 10 * dt;
+    if (lerpFactor >= 1.0) {
+      worldX = targetWorldX; // Anti-overshoot, motor tidak akan goyang di awal
+    } else {
+      worldX += dx * lerpFactor;
+    }
 
     // Efek Motion Animasi Belok (Miring/Lean) - Maksimal miring ~15 derajat (0.25 radian)
     angle = (dx * 0.003).clamp(-0.25, 0.25);
 
     // Logika Nunduk
     if (isSliding) {
+      sprite = _spriteNunduk; // Ganti ke sprite menunduk
+      slideYOffset =
+          35.0; // Turunkan posisi visual pemain agar terlihat 'di kolong'
       slideTimer -= dt;
       if (slideTimer <= 0) {
         isSliding = false; // Kembali berdiri
       }
+    } else {
+      sprite = _spriteNormal; // Kembali ke sprite normal
+      slideYOffset = 0; // Kembalikan posisi visual
     }
 
     // Logika Kebal Sesaat (Invincibility)
@@ -137,17 +175,81 @@ class Player extends SpriteComponent
 
     // Proyeksi skala dari ruang 3D ke posisi Layar 2D
     final scale = gameRef.getScale(worldZ);
-    size = baseSize * scale;
 
-    // Secara visual membuat motor & kurir memendek saat nunduk
-    if (isSliding) {
-      size.y = (baseSize.y * 0.5) * scale;
+    // Hitung goncangan (shake) jika timer aktif
+    double shakeX = 0;
+    if (shakeTimer > 0) {
+      shakeTimer -= dt;
+      shakeX = sin(shakeTimer * 50) * 15;
     }
 
-    position = Vector2(
-      (gameRef.size.x / 2) + (worldX * scale),
-      gameRef.horizonY + ((gameRef.cameraHeight + worldY) * scale),
+    // Gunakan setValues alih-alih Vector2() baru setiap frame (Mencegah Lag Memory)
+    size.setValues(baseSize.x * scale, baseSize.y * scale);
+    position.setValues(
+      (gameRef.size.x / 2) + (worldX * scale) + shakeX,
+      gameRef.horizonY +
+          ((gameRef.cameraHeight + worldY + slideYOffset) * scale),
     );
+
+    // --- LOGIKA TABRAKAN 3D MANUAL (0 DELAY) ---
+    // Mengabaikan hitbox 2D Flame Engine yang sering meleset karena distorsi perspektif.
+    // Kita periksa tabrakan menggunakan koordinat 3D murni setiap frame.
+    if (!isInvincible) {
+      // Mencegah GC Lag dengan menggunakan standard for-loop dibanding Iterable .whereType
+      for (final child in gameRef.children) {
+        if (child is! Obstacle) continue;
+        final obstacle = child;
+
+        if (obstacle.isRemoving) continue;
+
+        // 1. Cek Sumbu Z (Kedalaman / Depan-Belakang)
+        bool inZRange =
+            worldZ >= (obstacle.worldZ - 80.0) &&
+            worldZ <= (obstacle.worldZ + obstacle.depthZ + 80.0);
+        if (!inZRange) continue;
+
+        // 2. Cek Sumbu X (Lajur Kiri/Tengah/Kanan)
+        double obstacleWidth = obstacle.baseSize.x * 0.9;
+        double obstacleLeft = obstacle.worldX - (obstacleWidth / 2);
+        double obstacleRight = obstacle.worldX + (obstacleWidth / 2);
+
+        double playerWidth = baseSize.x * 0.5;
+        double playerLeft = worldX - (playerWidth / 2);
+        double playerRight = worldX + (playerWidth / 2);
+
+        bool inXRange =
+            playerRight > obstacleLeft && playerLeft < obstacleRight;
+        if (!inXRange) continue;
+
+        // 3. Cek Sumbu Y (Ketinggian / Lompat / Nunduk)
+        bool isHit = false;
+        if (obstacle.isFloating) {
+          if (isJumping)
+            isHit = true;
+          else if (!isSliding)
+            isHit = true;
+        } else {
+          if (obstacle.isSmall) {
+            isHit = worldY >= 0; // INSTAN HIT 0 DETIK SAAT BAN MENYENTUH TANAH
+          } else {
+            isHit = worldY > -60.0;
+          }
+        }
+
+        // 4. Eksekusi Damage
+        if (isHit) {
+          if (hasShield) {
+            hasShield = false;
+            obstacle.removeFromParent();
+            _triggerShake();
+          } else {
+            _triggerShake();
+            gameRef.playerHit();
+          }
+          break; // Stop loop jika sudah terkena hit
+        }
+      }
+    }
   }
 
   @override
@@ -155,56 +257,23 @@ class Player extends SpriteComponent
     super.onCollision(intersectionPoints, other);
     if (isInvincible) return; // Jika kebal, abaikan semua tabrakan
 
-    // Jika menabrak rintangan, panggil fungsi gameOver
-    if (other is Obstacle) {
-      // Cek overlap kedalaman ruang 3D (Z)
-      if ((worldZ - other.worldZ).abs() < 80.0) {
-        bool isHit = false;
-
-        if (other.isFloating) {
-          // Nabrak portal: Jika tidak nunduk, atau malah lompat menyundul
-          if (!isSliding || worldY < -20.0) {
-            isHit = true;
-          }
-        } else {
-          // Nabrak rintangan bawah: Jika lompatan kurang tinggi
-          if (worldY > (other.isSmall ? -40.0 : -60.0)) {
-            isHit = true;
-          }
-        }
-
-        if (isHit) {
-          if (other.isRemoving) {
-            return; // Mencegah fungsi terpanggil berkali-kali
-          }
-          if (hasShield) {
-            hasShield = false;
-            other.removeFromParent(); // Hancurkan obstacle
-            _triggerShake();
-          } else {
-            _triggerShake();
-            gameRef.playerHit();
-          }
-        }
-      }
-    } else if (other is Coin) {
+    if (other is Coin) {
       // Perbesar batas deteksi Z (150.0) agar koin langsung diambil saat menyentuh moncong depan motor
       if ((worldZ - other.worldZ).abs() < 150.0 && worldY > -60.0) {
         if (other.isRemoving) return; // Mencegah koin ganda
         gameRef.currentCoins++;
-        other.removeFromParent();
+
+        // Ganti `removeFromParent` dengan memunculkan partikel di posisi koin
+        gameRef.add(CoinParticle(position: other.position));
+        other.removeFromParent(); // Kemudian hapus koinnya
       }
     }
   }
 
   void _triggerShake() {
-    // Simulasi Screen/Player hit feedback ringan (Screen Shake)
-    add(
-      MoveEffect.by(
-        Vector2(15, 0),
-        EffectController(duration: 0.05, reverseDuration: 0.05, repeatCount: 3),
-      ),
-    );
+    // Alih-alih menggunakan MoveEffect yang bentrok dengan sistem koordinat 3D kita,
+    // kita atur timer goncangan manual yang sangat ringan dan mulus.
+    shakeTimer = 0.2;
   }
 
   void triggerInvincibility() {
