@@ -1,5 +1,4 @@
 import 'package:flame/components.dart';
-import 'package:flame/collisions.dart';
 import 'package:flutter/material.dart';
 import 'dart:math';
 import '../kurir_game.dart';
@@ -19,7 +18,6 @@ class Obstacle extends PositionComponent with HasGameRef<KurirGame> {
   Sprite? spriteTengah;
   Sprite? spriteBelakang;
   late Paint fallbackPaint;
-  late final RectangleHitbox hitbox;
 
   static final Random _sharedRandom = Random(); // Random global untuk efisiensi
 
@@ -139,10 +137,6 @@ class Obstacle extends PositionComponent with HasGameRef<KurirGame> {
     } catch (e) {
       // Jangan print error agar terminal tidak spam, game otomatis pakai kotak warna
     }
-
-    // Tambahkan Hitbox yang ukurannya akan di-update setiap frame agar selalu akurat
-    hitbox = RectangleHitbox();
-    add(hitbox);
   }
 
   @override
@@ -339,24 +333,5 @@ class Obstacle extends PositionComponent with HasGameRef<KurirGame> {
       (gameRef.size.x / 2) + (worldX * scale),
       gameRef.horizonY + ((gameRef.cameraHeight + worldY) * scale),
     );
-
-    // Update ukuran dan posisi hitbox agar sesuai dengan skala visual.
-    double hWidth = compWidth * 0.9;
-    double hHeight = compHeight * 0.9;
-
-    if (isFloating) {
-      hHeight += 300 * scale;
-      hitbox.size.setValues(hWidth, hHeight);
-      hitbox.position.setValues((size.x - hWidth) / 2, size.y - hHeight);
-    } else if (depthZ > 0) {
-      // Untuk galian, hitbox presisi menggunakan ukuran 3D hasil proyeksi
-      hWidth = size.x;
-      hHeight = size.y;
-      hitbox.size.setValues(hWidth, hHeight);
-      hitbox.position.setValues(0, 0);
-    } else {
-      hitbox.size.setValues(hWidth, hHeight);
-      hitbox.position.setValues((size.x - hWidth) / 2, size.y - hHeight);
-    }
   }
 }

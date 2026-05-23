@@ -5,6 +5,9 @@ on:
     branches:
       - master # Atau 'main', tergantung nama branch utama repository kamu
 
+permissions:
+  contents: write
+
 jobs:
   build_apk:
     name: Build Android APK

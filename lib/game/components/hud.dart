@@ -9,13 +9,14 @@ class HudComponent extends PositionComponent with HasGameRef<KurirGame> {
   coinIcon; // Kita gunakan SpriteComponent untuk gambar aset
   late TextComponent livesText; // Tambahkan deklarasi untuk teks nyawa (hati)
 
-  // Warna untuk background UI bergaya kotak retro
-  final Paint _bgPaint = Paint()
-    ..color = const Color(0x99000000); // Hitam transparan 60%
-  final Paint _borderPaint = Paint()
-    ..color = Colors.white
-    ..style = PaintingStyle.stroke
-    ..strokeWidth = 2.5;
+  // Palet Warna Panel UI Pixel Art Retro (Solid, tanpa transparansi)
+  final Paint _panelBorderPaint = Paint()..color = const Color(0xFFFFFFFF);
+  final Paint _panelShadowPaint = Paint()..color = const Color(0xFF111111);
+  final Paint _panelBgPaint = Paint()
+    ..color = const Color(0xFF2A2A35); // Biru dongker gelap khas RPG
+
+  // Simpan warna Paint di awal agar tidak dibuat berulang di fungsi render (Anti-Lag)
+  final Paint _magnetFillPaint = Paint()..color = Colors.lightBlueAccent;
 
   HudComponent() : super(priority: 100);
 
@@ -43,7 +44,8 @@ class HudComponent extends PositionComponent with HasGameRef<KurirGame> {
           fontSize: 22,
           fontWeight: FontWeight.w900,
           shadows: [
-            Shadow(color: Colors.black, blurRadius: 2, offset: Offset(2, 2)),
+            // blurRadius 0 menghasilkan bayangan kotak yang tajam khas Pixel Art!
+            Shadow(color: Colors.black, blurRadius: 0, offset: Offset(3, 3)),
           ],
         ),
       ),
@@ -60,7 +62,7 @@ class HudComponent extends PositionComponent with HasGameRef<KurirGame> {
           fontSize: 22,
           fontWeight: FontWeight.w900,
           shadows: [
-            Shadow(color: Colors.black, blurRadius: 2, offset: Offset(2, 2)),
+            Shadow(color: Colors.black, blurRadius: 0, offset: Offset(3, 3)),
           ],
         ),
       ),
@@ -75,7 +77,7 @@ class HudComponent extends PositionComponent with HasGameRef<KurirGame> {
         style: const TextStyle(
           fontSize: 20,
           shadows: [
-            Shadow(color: Colors.black, blurRadius: 2, offset: Offset(2, 2)),
+            Shadow(color: Colors.black, blurRadius: 0, offset: Offset(3, 3)),
           ],
         ),
       ),
@@ -109,55 +111,67 @@ class HudComponent extends PositionComponent with HasGameRef<KurirGame> {
 
     // Responsif: Posisikan elemen UI dengan tepat
     // Posisi Indikator Jarak (Di Kiri Atas)
-    distanceText.position = Vector2(80, 40);
+    distanceText.position = Vector2(85, 43);
 
     // Posisi Indikator Koin dan Gambar Asetnya (Di Bawah Indikator Jarak)
-    coinIcon.position = Vector2(50, 100);
-    coinText.position = Vector2(90, 100);
+    coinIcon.position = Vector2(40, 99);
+    coinText.position = Vector2(80, 99);
 
     // Posisi Indikator Nyawa (Di Kanan Atas Layar)
-    livesText.position = Vector2(gameRef.size.x - 80, 40);
+    livesText.position = Vector2(gameRef.size.x - 85, 43);
+  }
+
+  // Helper untuk menggambar panel ala Pixel Art RPG
+  void _drawRetroPanel(Canvas canvas, Rect rect) {
+    // 1. Drop shadow luar yang kaku
+    canvas.drawRect(rect.translate(4, 4), _panelShadowPaint);
+    // 2. Garis luar (Border) tebal warna putih
+    canvas.drawRect(rect, _panelBorderPaint);
+    // 3. Garis dalam (Inner Border) warna hitam
+    canvas.drawRect(rect.deflate(3), _panelShadowPaint);
+    // 4. Latar warna solid
+    canvas.drawRect(rect.deflate(6), _panelBgPaint);
   }
 
   @override
   void render(Canvas canvas) {
     // Background Indikator Jarak
-    final distanceBg = RRect.fromLTRBAndCorners(
-      20,
-      20,
-      140,
-      60, // Kordinat kotak (kiri, atas, kanan, bawah)
-      topLeft: const Radius.circular(8),
-      bottomRight: const Radius.circular(8),
-    );
-    canvas.drawRRect(distanceBg, _bgPaint);
-    canvas.drawRRect(distanceBg, _borderPaint);
+    final distanceBg = Rect.fromLTWH(20, 20, 130, 46);
+    _drawRetroPanel(canvas, distanceBg);
 
-    // Background Indikator Koin (Dipindah tepat di bawah Jarak)
-    final coinBg = RRect.fromLTRBAndCorners(
-      20,
-      80,
-      140,
-      120,
-      topLeft: const Radius.circular(8),
-      bottomRight: const Radius.circular(8),
-    );
-    canvas.drawRRect(coinBg, _bgPaint);
-    canvas.drawRRect(coinBg, _borderPaint);
+    // Background Indikator Koin
+    final coinBg = Rect.fromLTWH(20, 76, 130, 46);
+    _drawRetroPanel(canvas, coinBg);
 
-    // Background Indikator Nyawa (Kotak Kanan Atas)
-    final livesBg = RRect.fromLTRBAndCorners(
-      gameRef.size.x - 140,
-      20,
-      gameRef.size.x - 20,
-      60,
-      topRight: const Radius.circular(8),
-      bottomLeft: const Radius.circular(
-        8,
-      ), // Sudut tumpul berkebalikan dari kotak kiri
-    );
-    canvas.drawRRect(livesBg, _bgPaint);
-    canvas.drawRRect(livesBg, _borderPaint);
+    // Background Indikator Nyawa
+    final livesBg = Rect.fromLTWH(gameRef.size.x - 150, 20, 130, 46);
+    _drawRetroPanel(canvas, livesBg);
+
+    // --- Indikator Bar Magnet (Hanya muncul jika magnet aktif) ---
+    if (gameRef.player.isMagnetActive) {
+      // Kotak Background Bar Magnet (Lebar sama dengan nyawa, posisi di bawahnya)
+      final magnetBg = Rect.fromLTWH(gameRef.size.x - 150, 76, 130, 22);
+
+      // Gambar frame bar magnet dengan style retro
+      canvas.drawRect(magnetBg.translate(3, 3), _panelShadowPaint); // Shadow
+      canvas.drawRect(magnetBg, _panelBorderPaint); // Border Putih
+      canvas.drawRect(
+        magnetBg.deflate(3),
+        _panelShadowPaint,
+      ); // Base Hitam Dalam
+
+      // Isi Bar Magnet (Warna biru menyusut)
+      double ratio = (gameRef.player.magnetDuration / 10.0).clamp(0.0, 1.0);
+      if (ratio > 0) {
+        final fillRect = Rect.fromLTWH(
+          magnetBg.left + 3,
+          magnetBg.top + 3,
+          (magnetBg.width - 6) * ratio,
+          magnetBg.height - 6,
+        );
+        canvas.drawRect(fillRect, _magnetFillPaint);
+      }
+    }
 
     // Lanjutkan render normal (teks & ikon koin dari komponen)
     super.render(canvas);

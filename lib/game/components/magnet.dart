@@ -1,15 +1,16 @@
 import 'package:flame/components.dart';
-import 'dart:math';
 import 'package:flutter/material.dart';
 import '../kurir_game.dart';
 
-class Coin extends SpriteComponent with HasGameRef<KurirGame> {
+class Magnet extends PositionComponent with HasGameRef<KurirGame> {
   double worldX;
-  double worldY = -30; // Melayang sedikit di atas jalan
+  double worldY = -40; // Melayang sedikit di atas tanah setara koin
   double worldZ;
   final Vector2 baseSize;
+  Sprite? sprite;
+  final Paint paint = Paint();
 
-  Coin({required this.worldX, required this.worldZ, required this.baseSize})
+  Magnet({required this.worldX, required this.worldZ, required this.baseSize})
     : super(anchor: Anchor.center);
 
   @override
@@ -17,11 +18,9 @@ class Coin extends SpriteComponent with HasGameRef<KurirGame> {
     super.onLoad();
 
     try {
-      sprite = Sprite(
-        gameRef.images.fromCache('koin.png'),
-      ); // Panggil Instan dari Cache
+      sprite = Sprite(gameRef.images.fromCache('magnet.png'));
     } catch (e) {
-      // Fallback aman
+      // Fallback
     }
     paint.filterQuality = FilterQuality.none;
   }
@@ -33,19 +32,28 @@ class Coin extends SpriteComponent with HasGameRef<KurirGame> {
     // Gerakkan mendekat ke kamera
     worldZ -= gameRef.gameSpeed * dt;
 
-    // Hapus dari memori jika sudah lewat di belakang layar
     if (worldZ < -100) {
       removeFromParent();
       return;
     }
 
-    // Proyeksi Skala Pseudo-3D
     final scale = gameRef.getScale(worldZ);
-    // Gunakan setValues untuk mencegah GC lag
-    size.setValues(baseSize.x * 4.0 * scale, baseSize.y * 4.0 * scale);
+    size.setValues(
+      baseSize.x * 4.0 * scale,
+      baseSize.y * 4.0 * scale,
+    ); // Scale serupa dengan koin
     position.setValues(
       (gameRef.size.x / 2) + (worldX * scale),
       gameRef.horizonY + ((gameRef.cameraHeight + worldY) * scale),
     );
+  }
+
+  @override
+  void render(Canvas canvas) {
+    if (sprite != null) {
+      sprite!.render(canvas, size: size, overridePaint: paint);
+    } else {
+      canvas.drawRect(size.toRect(), Paint()..color = Colors.redAccent);
+    }
   }
 }

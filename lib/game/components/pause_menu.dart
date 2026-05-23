@@ -16,24 +16,17 @@ class PauseMenuOverlay extends StatelessWidget {
           width: MediaQuery.of(context).size.width * 0.85,
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [
-                Color(0xFFFF5E3A),
-                Color(0xFFFF2A6D),
-              ], // Warm Sunset Gradient (Sama dengan Main Menu)
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+            color: const Color(0xFF2A2A35), // Biru dongker gelap khas Retro RPG
             border: Border.all(
               color: Colors.white,
-              width: 6,
+              width: 4,
             ), // Ketebalan ala Pixel Art
             borderRadius: BorderRadius.zero, // Sudut tajam kaku
             boxShadow: const [
               BoxShadow(
-                color: Color(0xFF1A1A1A),
+                color: Color(0xFF111111),
                 blurRadius: 0,
-                offset: Offset(8, 8), // Hard shadow khas retro arcade
+                offset: Offset(6, 6), // Hard shadow khas retro arcade
               ),
             ],
           ),
@@ -49,23 +42,30 @@ class PauseMenuOverlay extends StatelessWidget {
                   height: 1.0,
                   fontWeight: FontWeight.w900,
                   fontStyle: FontStyle.italic,
-                  color: Colors.white,
+                  color: Color(0xFFFFD700), // Kuning Emas Cerah
                   shadows: [
                     Shadow(
-                      color: Color(0xFF2D1B4E),
-                      blurRadius: 2,
-                      offset: Offset(8, 8),
+                      color: Colors.black,
+                      blurRadius: 0,
+                      offset: Offset(4, 4),
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 12),
               const Text(
-                'TARIK NAFAS DULU NGAB! ☕',
+                'GAME DIJEDA',
                 style: TextStyle(
-                  fontSize: 16,
+                  fontSize: 20,
                   fontWeight: FontWeight.bold,
-                  color: Colors.yellowAccent,
+                  color: Colors.white,
+                  shadows: [
+                    Shadow(
+                      color: Colors.black,
+                      blurRadius: 0,
+                      offset: Offset(2, 2),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 36),
@@ -75,22 +75,23 @@ class PauseMenuOverlay extends StatelessWidget {
                 height: 60,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF39FF14), // Hijau Nyala
-                    foregroundColor: Colors.black,
+                    backgroundColor: const Color(0xFF00E5FF), // Cyan retro
+                    foregroundColor: Colors.white,
                     elevation: 0,
-                    shape: const ContinuousRectangleBorder(
-                      side: BorderSide(color: Colors.black, width: 4),
+                    shape: const RoundedRectangleBorder(
+                      borderRadius: BorderRadius.zero, // Kotak tajam pixel art
+                      side: BorderSide(color: Colors.white, width: 3),
                     ),
                   ),
                   onPressed: () {
                     game.resumeGame();
                   },
                   child: const Text(
-                    'LANJUT GAS! 🚀',
+                    'LANJUT MAIN',
                     style: TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.w900,
-                      fontStyle: FontStyle.italic,
+                      color: Colors.black,
                     ),
                   ),
                 ),
@@ -102,11 +103,12 @@ class PauseMenuOverlay extends StatelessWidget {
                 height: 50,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF00E5FF), // Cyan cerah
-                    foregroundColor: Colors.black,
+                    backgroundColor: const Color(0xFFFF2A6D), // Pink retro
+                    foregroundColor: Colors.white,
                     elevation: 0,
-                    shape: const ContinuousRectangleBorder(
-                      side: BorderSide(color: Colors.black, width: 4),
+                    shape: const RoundedRectangleBorder(
+                      borderRadius: BorderRadius.zero,
+                      side: BorderSide(color: Colors.white, width: 3),
                     ),
                   ),
                   onPressed: () {
@@ -119,8 +121,19 @@ class PauseMenuOverlay extends StatelessWidget {
                     game.pauseEngine(); // Hentikan game kembali ke state awal
                   },
                   child: const Text(
-                    'BALIK KANDANG 🏠',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                    'KEMBALI KE MENU',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
+                      shadows: [
+                        Shadow(
+                          color: Colors.black,
+                          blurRadius: 0,
+                          offset: Offset(2, 2),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),

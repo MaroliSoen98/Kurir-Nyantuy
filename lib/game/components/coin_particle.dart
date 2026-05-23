@@ -12,25 +12,24 @@ class CoinParticle extends ParticleSystemComponent {
   // Simpan Paint object agar tidak dibuat berulang kali (Optimasi Performa)
   static final Paint _particlePaint = Paint()..color = const Color(0xFFFFD700);
 
-  CoinParticle({required super.position});
-
-  @override
-  Future<void> onLoad() async {
-    particle = Particle.generate(
-      count: 10, // Jumlah partikel yang muncul
-      lifespan: 0.6, // Durasi partikel ada di layar (dalam detik)
-      generator: (i) => AcceleratedParticle(
-        acceleration: Vector2(0, 200), // Sedikit efek gravitasi ke bawah
-        speed: Vector2(
-          _random.nextDouble() * 200 -
-              100, // Kecepatan horizontal acak (kiri/kanan)
-          _random.nextDouble() * -350, // Semburan awal ke arah atas
+  CoinParticle({required super.position})
+    : super(
+        // Setup partikel sinkron/langsung di konstruktor
+        // Mencegah error Null Check dari internal Flame Engine!
+        particle: Particle.generate(
+          count: 10,
+          lifespan: 0.6,
+          generator: (i) => AcceleratedParticle(
+            acceleration: Vector2(0, 200),
+            speed: Vector2(
+              _random.nextDouble() * 200 - 100,
+              _random.nextDouble() * -350,
+            ),
+            child: CircleParticle(
+              radius: _random.nextDouble() * 2.5 + 1.0,
+              paint: _particlePaint,
+            ),
+          ),
         ),
-        child: CircleParticle(
-          radius: _random.nextDouble() * 2.5 + 1.0, // Ukuran partikel acak
-          paint: _particlePaint, // Gunakan paint yang sudah di-cache
-        ),
-      ),
-    );
-  }
+      );
 }

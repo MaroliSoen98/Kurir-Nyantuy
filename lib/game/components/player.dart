@@ -1,5 +1,4 @@
 import 'package:flame/components.dart';
-import 'package:flame/collisions.dart';
 import 'package:flame/effects.dart';
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
@@ -8,9 +7,9 @@ import '../kurir_game.dart';
 import 'obstacle.dart';
 import 'coin.dart';
 import 'coin_particle.dart';
+import 'magnet.dart';
 
-class Player extends SpriteComponent
-    with HasGameRef<KurirGame>, CollisionCallbacks {
+class Player extends SpriteComponent with HasGameRef<KurirGame> {
   // -1: Kiri, 0: Tengah, 1: Kanan
   int currentLane = 0;
   double laneSpacing =
@@ -36,6 +35,10 @@ class Player extends SpriteComponent
   bool hasShield = false; // Status Shield/Booster Aktif
   bool isInvincible = false;
   double invincibilityTimer = 0;
+
+  // Status Power Up Magnet
+  bool isMagnetActive = false;
+  double magnetDuration = 0;
 
   final Vector2 baseSize = Vector2(
     110,
@@ -67,25 +70,6 @@ class Player extends SpriteComponent
       debugPrint("Sprite motor tidak ditemukan di cache: $e");
     }
     paint.filterQuality = FilterQuality.none; // Mencegah pixel art menjadi blur
-
-    // Tambahkan Hitbox untuk deteksi tabrakan
-    // Hitbox dibuat lebih kecil dari ukuran sprite untuk deteksi yang lebih presisi,
-    // mengabaikan area transparan di sekitar gambar. Ini membuat tabrakan terasa lebih adil.
-    final hitboxSize = Vector2(
-      baseSize.x * 0.5, // 50% dari lebar asli
-      baseSize.y * 0.8, // 80% dari tinggi asli
-    );
-    add(
-      RectangleHitbox(
-        size: hitboxSize,
-        // Posisikan hitbox agar terpusat di tengah secara horizontal dan menempel di bawah.
-        // Hitbox dihitung dari pojok KIRI-ATAS komponen, bukan dari anchor-nya.
-        position: Vector2(
-          (baseSize.x - hitboxSize.x) / 2,
-          baseSize.y - hitboxSize.y,
-        ),
-      ),
-    );
   }
 
   void moveLeft() {
@@ -140,6 +124,9 @@ class Player extends SpriteComponent
     // Efek Motion Animasi Belok (Miring/Lean) - Maksimal miring ~15 derajat (0.25 radian)
     angle = (dx * 0.003).clamp(-0.25, 0.25);
 
+    final activeChildren = gameRef.children
+        .toList(); // Ambil snapshot daftar objek sekali saja (Anti-Crash CME!)
+
     // Logika Nunduk
     if (isSliding) {
       sprite = _spriteNunduk; // Ganti ke sprite menunduk
@@ -159,6 +146,28 @@ class Player extends SpriteComponent
       invincibilityTimer -= dt;
       if (invincibilityTimer <= 0) {
         isInvincible = false;
+      }
+    }
+
+    // Logika Power Up Magnet (Hisap Koin)
+    if (isMagnetActive) {
+      magnetDuration -= dt;
+      if (magnetDuration <= 0) {
+        isMagnetActive = false;
+      } else {
+        // Telusuri koin-koin dan hisap mereka jika jaraknya masuk jangkauan
+        for (final child in activeChildren) {
+          if (child is Coin && !child.isRemoving) {
+            if (child.worldZ > worldZ && child.worldZ < worldZ + 1500.0) {
+              double pullSpeed = 8.0 * dt;
+              child.worldX += (worldX - child.worldX) * pullSpeed;
+              child.worldY += (worldY - child.worldY) * pullSpeed;
+              child.worldZ -=
+                  (gameRef.gameSpeed * 0.8) *
+                  dt; // Tarik ekstra cepat ke arah pemain!
+            }
+          }
+        }
       }
     }
 
@@ -191,16 +200,13 @@ class Player extends SpriteComponent
           ((gameRef.cameraHeight + worldY + slideYOffset) * scale),
     );
 
-    // --- LOGIKA TABRAKAN 3D MANUAL (0 DELAY) ---
-    // Mengabaikan hitbox 2D Flame Engine yang sering meleset karena distorsi perspektif.
-    // Kita periksa tabrakan menggunakan koordinat 3D murni setiap frame.
-    if (!isInvincible) {
-      // Mencegah GC Lag dengan menggunakan standard for-loop dibanding Iterable .whereType
-      for (final child in gameRef.children) {
-        if (child is! Obstacle) continue;
-        final obstacle = child;
+    // --- LOGIKA TABRAKAN 3D MANUAL (SUPER RINGAN & 0 DELAY) ---
+    // Menggantikan 100% sistem deteksi Quadtree Flame yang sangat membebani HP
+    for (final child in activeChildren) {
+      if (child is Obstacle) {
+        if (isInvincible || child.isRemoving) continue; // Abaikan jika kebal
 
-        if (obstacle.isRemoving) continue;
+        final obstacle = child;
 
         // 1. Cek Sumbu Z (Kedalaman / Depan-Belakang)
         bool inZRange =
@@ -224,14 +230,15 @@ class Player extends SpriteComponent
         // 3. Cek Sumbu Y (Ketinggian / Lompat / Nunduk)
         bool isHit = false;
         if (obstacle.isFloating) {
-          if (isJumping)
-            isHit = true;
-          else if (!isSliding)
-            isHit = true;
+          // PORTAL: Wajib nunduk. Lompat atau diam = nabrak
+          isHit = isJumping || !isSliding;
         } else {
           if (obstacle.isSmall) {
-            isHit = worldY >= 0; // INSTAN HIT 0 DETIK SAAT BAN MENYENTUH TANAH
+            // GALIAN: Pemain harus melompat cukup tinggi untuk melewatinya
+            isHit = worldY > -30.0;
           } else {
+            // RINTANGAN NORMAL (Emak-emak & Tembok):
+            // Bisa dilompati asalkan pemain sedang melompat cukup tinggi!
             isHit = worldY > -60.0;
           }
         }
@@ -248,24 +255,27 @@ class Player extends SpriteComponent
           }
           break; // Stop loop jika sudah terkena hit
         }
-      }
-    }
-  }
+      } else if (child is Coin) {
+        if (child.isRemoving) continue;
 
-  @override
-  void onCollision(Set<Vector2> intersectionPoints, PositionComponent other) {
-    super.onCollision(intersectionPoints, other);
-    if (isInvincible) return; // Jika kebal, abaikan semua tabrakan
+        // Jarak deteksi matematika murni 3D Koin (Jauh lebih ringan dari mengecek Hitbox Polygon)
+        if ((worldZ - child.worldZ).abs() < 150.0 &&
+            (worldX - child.worldX).abs() < 90.0 &&
+            (worldY - child.worldY).abs() < 80.0) {
+          gameRef.currentCoins++;
+          gameRef.add(CoinParticle(position: child.position));
+          child.removeFromParent();
+        }
+      } else if (child is Magnet) {
+        if (child.isRemoving) continue;
 
-    if (other is Coin) {
-      // Perbesar batas deteksi Z (150.0) agar koin langsung diambil saat menyentuh moncong depan motor
-      if ((worldZ - other.worldZ).abs() < 150.0 && worldY > -60.0) {
-        if (other.isRemoving) return; // Mencegah koin ganda
-        gameRef.currentCoins++;
-
-        // Ganti `removeFromParent` dengan memunculkan partikel di posisi koin
-        gameRef.add(CoinParticle(position: other.position));
-        other.removeFromParent(); // Kemudian hapus koinnya
+        if ((worldZ - child.worldZ).abs() < 150.0 &&
+            (worldX - child.worldX).abs() < 90.0 &&
+            (worldY - child.worldY).abs() < 80.0) {
+          isMagnetActive = true;
+          magnetDuration = 10.0; // Aktif selama 10 detik penuh
+          child.removeFromParent();
+        }
       }
     }
   }
@@ -287,5 +297,22 @@ class Player extends SpriteComponent
         EffectController(duration: 0.15, alternate: true, repeatCount: 5),
       ),
     );
+  }
+
+  @override
+  void render(Canvas canvas) {
+    if (isMagnetActive) {
+      // Gambar lingkaran aura magnet biru di sekitar motor
+      final auraPaint = Paint()
+        ..color = Colors.lightBlueAccent.withAlpha(120)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 6.0;
+      canvas.drawCircle(
+        Offset(size.x / 2, size.y / 2),
+        size.x * 0.6,
+        auraPaint,
+      );
+    }
+    super.render(canvas); // Render motor di atas aura
   }
 }

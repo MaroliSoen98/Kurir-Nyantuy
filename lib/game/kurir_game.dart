@@ -9,9 +9,9 @@ import 'components/player.dart';
 import 'components/obstacle.dart';
 import 'components/coin.dart';
 import 'components/hud.dart';
+import 'components/magnet.dart';
 
-class KurirGame extends FlameGame
-    with PanDetector, KeyboardEvents, HasCollisionDetection {
+class KurirGame extends FlameGame with PanDetector, KeyboardEvents {
   late Player player;
 
   // Kecepatan game akan terus bertambah seiring waktu
@@ -65,6 +65,7 @@ class KurirGame extends FlameGame
         'galian_tengah.png',
         'galian_belakang.png',
         'cloud.png',
+        'magnet.png', // <-- Tambahkan aset magnet ke dalam daftar load
       ]);
     } catch (e) {
       debugPrint("Beberapa gambar belum ada, dilewati untuk preload.");
@@ -145,24 +146,64 @@ class KurirGame extends FlameGame
     }
   }
 
+  // Helper fungsi untuk membuat pola koin melengkung menyerupai kurva lompatan
+  void _spawnCoinArc(double laneX, double startZ, double endZ, int count) {
+    for (int i = 0; i < count; i++) {
+      double t = (count > 1) ? (i / (count - 1)) : 0.5;
+      // Puncak lompatan player ada di sekitar Y = -130, kita set arc ketinggian menyesuaikan elevasinya
+      double arcY = -100.0 * sin(t * pi);
+      double currentZ = startZ + (endZ - startZ) * t;
+
+      add(
+        Coin(worldX: laneX, worldZ: currentZ, baseSize: Vector2(40, 40))
+          ..worldY =
+              arcY - 30.0, // Melayang ekstra mengikuti sudut elevasi lompatan
+      );
+    }
+  }
+
+  // Helper fungsi untuk membuat barisan koin lurus yang rapi
+  void _spawnCoinLine(
+    double laneX,
+    double startZ,
+    int count, {
+    double spacing = 100.0,
+  }) {
+    for (int i = 0; i < count; i++) {
+      add(
+        Coin(
+          worldX: laneX,
+          worldZ: startZ + (i * spacing),
+          baseSize: Vector2(40, 40),
+        ),
+      );
+    }
+  }
+
   void _spawnObstacle() {
     if (isGameOver) return;
 
     // Beri jeda kosong jika pola sebelumnya sangat panjang agar tidak tumpang tindih
     if (_skipSpawnTicks > 0) {
       _skipSpawnTicks--;
-      // Isi area "jeda" dengan barisan koin rapat (Chain Grab) agar pemain tetap asyik nge-drift
-      final double fillerLane = (_random.nextInt(3) - 1).toDouble();
-      for (int i = 0; i < 6; i++) {
-        add(
-          Coin(
-            worldX: fillerLane * 180.0,
-            worldZ: 2200.0 + (i * 90.0), // Rapatkan jarak antar koin!
-            baseSize: Vector2(40, 40),
-          ),
-        );
+
+      // Variasi "Filler": 50% Barisan Koin Panjang, 50% Blok Koin ala Subway Surfer
+      if (_random.nextBool()) {
+        final double fillerLane = (_random.nextInt(3) - 1).toDouble();
+        _spawnCoinLine(fillerLane * 180.0, 2200.0, 8, spacing: 90.0);
+      } else {
+        // Blok Koin Lebar 3 Lajur x 3 Baris
+        for (double l in [-1.0, 0.0, 1.0]) {
+          _spawnCoinLine(l * 180.0, 2200.0, 3, spacing: 120.0);
+        }
       }
       return;
+    }
+
+    // --- SPAWN MAGNET (Peluang 5% muncul secara acak) ---
+    if (_random.nextDouble() < 0.05) {
+      final double magLane = (_random.nextInt(3) - 1).toDouble() * 180.0;
+      add(Magnet(worldX: magLane, worldZ: 2500.0, baseSize: Vector2(40, 40)));
     }
 
     final double laneSpacing = 180.0;
@@ -193,6 +234,8 @@ class KurirGame extends FlameGame
             depthZ: 250.0,
           ),
         );
+        // Tambahkan koin melengkung di atas galian ini untuk panduan lompat
+        _spawnCoinArc(0.0, startZ + 1150.0, startZ + 1500.0, 4);
         _skipSpawnTicks = 1;
         break;
 
@@ -227,9 +270,8 @@ class KurirGame extends FlameGame
             canDrift: true,
           ),
         );
-        add(
-          Coin(worldX: laneSpacing, worldZ: startZ, baseSize: Vector2(40, 40)),
-        );
+        // Barisan 3 koin penuntun untuk celah aman pertama
+        _spawnCoinLine(laneSpacing, startZ - 100.0, 3, spacing: 100.0);
 
         add(
           Obstacle(
@@ -239,13 +281,8 @@ class KurirGame extends FlameGame
             canDrift: true,
           ),
         );
-        add(
-          Coin(
-            worldX: -laneSpacing,
-            worldZ: startZ + 500.0,
-            baseSize: Vector2(40, 40),
-          ),
-        );
+        // Barisan 3 koin penuntun untuk celah aman kedua
+        _spawnCoinLine(-laneSpacing, startZ + 400.0, 3, spacing: 100.0);
 
         add(
           Obstacle(
@@ -255,13 +292,8 @@ class KurirGame extends FlameGame
             canDrift: true,
           ),
         );
-        add(
-          Coin(
-            worldX: laneSpacing,
-            worldZ: startZ + 1000.0,
-            baseSize: Vector2(40, 40),
-          ),
-        );
+        // Barisan 3 koin penuntun untuk celah aman ketiga
+        _spawnCoinLine(laneSpacing, startZ + 900.0, 3, spacing: 100.0);
 
         _skipSpawnTicks = 1;
         break;
@@ -328,14 +360,8 @@ class KurirGame extends FlameGame
                 depthZ: 250.0,
               ),
             );
-            // Koin melayang di udara, memandu pemain untuk melompat dengan aman!
-            add(
-              Coin(
-                worldX: l * laneSpacing,
-                worldZ: startZ + 125.0,
-                baseSize: Vector2(40, 40),
-              )..worldY = -180.0,
-            );
+            // Koin melengkung di udara mengikuti sudut elevasi dari lompatan user!
+            _spawnCoinArc(l * laneSpacing, startZ - 50.0, startZ + 300.0, 4);
           }
         }
         break;
@@ -376,9 +402,8 @@ class KurirGame extends FlameGame
             depthZ: 250.0,
           ),
         );
-        add(
-          Coin(worldX: 0.0, worldZ: startZ + 350.0, baseSize: Vector2(40, 40)),
-        );
+        // Ganti koin nimpa dengan koin melengkung (arc) lewati galian
+        _spawnCoinArc(0.0, startZ - 50.0, startZ + 300.0, 4);
 
         add(
           Obstacle(
@@ -390,12 +415,12 @@ class KurirGame extends FlameGame
         );
 
         final double sideLane6 = _random.nextBool() ? -1.0 : 1.0;
-        add(
-          Coin(
-            worldX: -sideLane6 * laneSpacing,
-            worldZ: startZ + 950.0,
-            baseSize: Vector2(40, 40),
-          ),
+        // Ubah koin tunggal menjadi barisan 3 koin penuntun di pinggir
+        _spawnCoinLine(
+          -sideLane6 * laneSpacing,
+          startZ + 900.0,
+          3,
+          spacing: 100.0,
         );
         add(
           Obstacle(
@@ -444,11 +469,13 @@ class KurirGame extends FlameGame
     gameSpeed = 1000.0;
     nextMilestone = 100;
     player.hasShield = false;
+    player.isMagnetActive = false; // Matikan efek magnet jika ada
 
     // Bersihkan rintangan & koin dari sisa permainan sebelumnya
     // Menggunakan toList() memastikan iterasi aman sebelum penghapusan.
     removeAll(children.whereType<Obstacle>().toList());
     removeAll(children.whereType<Coin>().toList());
+    removeAll(children.whereType<Magnet>().toList());
   }
 
   // Fungsi untuk menghentikan sementara (Pause)
@@ -812,15 +839,10 @@ class LightingSystem extends Component with HasGameRef<KurirGame> {
 
   // Objek Paint yang didaur ulang (Anti-Lag)
   final Paint _darknessPaint = Paint()..color = Colors.black;
-  // Buat objek paint layer secara terpusat agar tidak dialokasi tiap frame
-  final Paint _layerPaint = Paint();
-  final Paint _lightMaskPaint = Paint()
-    ..blendMode = BlendMode.dstOut
-    ..maskFilter = const MaskFilter.blur(
-      BlurStyle.normal,
-      25.0,
-    ); // Dibuat statis agar GPU tidak bekerja keras me-render ulang blur radius tiap frame!
+  final Paint _beamPaint = Paint()
+    ..color = Colors.white.withAlpha(15); // Cahaya tipis
   final Path _lightConePath = Path();
+  final Path _darknessPath = Path()..fillType = PathFillType.evenOdd;
 
   @override
   void render(Canvas canvas) {
@@ -841,30 +863,6 @@ class LightingSystem extends Component with HasGameRef<KurirGame> {
 
     // Hanya menggambar jika hari sudah mulai gelap untuk menghemat performa!
     if (darkness > 0.0) {
-      // 1. Buat layer baru untuk masking hanya pada area di BAWAH horizon.
-      // Null (Full screen) sangat membebani HP lambat. Batasan (Bounds) menaikkan FPS!
-      final layerRect = Rect.fromLTWH(
-        0,
-        gameRef.horizonY,
-        gameRef.size.x,
-        gameRef.size.y - gameRef.horizonY,
-      );
-      canvas.saveLayer(layerRect, _layerPaint);
-
-      // 2. Gambar lapisan kegelapan di seluruh layar
-      _darknessPaint.color = Colors.black.withAlpha((darkness * 255).toInt());
-      canvas.drawRect(
-        Rect.fromLTWH(
-          0,
-          gameRef
-              .horizonY, // Mulai menggambar kegelapan dari garis horizon ke bawah
-          gameRef.size.x,
-          gameRef.size.y - gameRef.horizonY,
-        ),
-        _darknessPaint,
-      );
-
-      // 3. Gambar "Lubang" berbentuk sorot lampu yang mengikuti perspektif jalan
       final player = gameRef.player;
 
       // --- Penyesuaian Lampu Dinamis ---
@@ -906,7 +904,6 @@ class LightingSystem extends Component with HasGameRef<KurirGame> {
           (gameRef.size.x / 2) +
           ((player.worldX + farBeamWidth / 2) * scaleFar);
 
-      // Buat Path berbentuk trapezoid yang mengikuti perspektif
       _lightConePath.reset();
       _lightConePath.moveTo(xNearLeft, yNear);
       _lightConePath.lineTo(xNearRight, yNear);
@@ -914,11 +911,30 @@ class LightingSystem extends Component with HasGameRef<KurirGame> {
       _lightConePath.lineTo(xFarLeft, yFar);
       _lightConePath.close();
 
-      // Gambar kerucut yang akan melubangi lapisan kegelapan
-      canvas.drawPath(_lightConePath, _lightMaskPaint);
+      // --- OPTIMASI RENDER ANTI-LAG ---
+      // Gunakan PathFillType.evenOdd untuk "melubangi" kanvas secara presisi tanpa saveLayer() GPU!
+      _darknessPath.reset();
+      _darknessPath.addRect(
+        Rect.fromLTWH(
+          0,
+          gameRef.horizonY,
+          gameRef.size.x,
+          gameRef.size.y - gameRef.horizonY,
+        ),
+      );
+      _darknessPath.addPath(_lightConePath, Offset.zero);
 
-      // 4. Kembalikan layer ke kanvas utama
-      canvas.restore();
+      _darknessPaint.color = Colors.black.withAlpha(
+        (darkness * 255).toInt().clamp(0, 255),
+      ); // Fix batas Alpha GPU!
+      canvas.drawPath(
+        _darknessPath,
+        _darknessPaint,
+      ); // Render lapisan malam berlubang (Ringan!)
+      canvas.drawPath(
+        _lightConePath,
+        _beamPaint,
+      ); // Tambahkan sorotan halus transparan di atas aspal
     }
   }
 }
