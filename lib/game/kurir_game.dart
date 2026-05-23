@@ -5,6 +5,7 @@ import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:math';
+import 'dart:ui' as ui;
 import 'components/player.dart';
 import 'components/obstacle.dart';
 import 'components/coin.dart';
@@ -17,6 +18,9 @@ class KurirGame extends FlameGame with PanDetector, KeyboardEvents {
   // Kecepatan game akan terus bertambah seiring waktu
   double gameSpeed = 1000.0; // Dipercepat sedikit untuk skala ruang 3D
   final Random _random = Random();
+
+  // Flag Debugging: Set true untuk force malam, set false untuk kembali normal
+  bool debugForceNight = false;
 
   // Scoring & Progression Offline Sementara
   double distanceTravelled = 0.0;
@@ -147,18 +151,31 @@ class KurirGame extends FlameGame with PanDetector, KeyboardEvents {
   }
 
   // Helper fungsi untuk membuat pola koin melengkung menyerupai kurva lompatan
-  void _spawnCoinArc(double laneX, double startZ, double endZ, int count) {
+  void _spawnCoinArc(
+    double laneX,
+    double startZ,
+    double endZ,
+    int count, {
+    bool addMagnetAtPeak = false,
+  }) {
     for (int i = 0; i < count; i++) {
       double t = (count > 1) ? (i / (count - 1)) : 0.5;
-      // Puncak lompatan player ada di sekitar Y = -130, kita set arc ketinggian menyesuaikan elevasinya
-      double arcY = -100.0 * sin(t * pi);
+      // Puncak arc disesuaikan agar item melayang jelas dengan sudut elevasi di atas galian
+      double arcY = -140.0 * sin(t * pi);
       double currentZ = startZ + (endZ - startZ) * t;
 
-      add(
-        Coin(worldX: laneX, worldZ: currentZ, baseSize: Vector2(40, 40))
-          ..worldY =
-              arcY - 30.0, // Melayang ekstra mengikuti sudut elevasi lompatan
-      );
+      if (addMagnetAtPeak && i == count ~/ 2) {
+        // Taruh Magnet tepat di puncak (peak) lompatan
+        add(
+          Magnet(worldX: laneX, worldZ: currentZ, baseSize: Vector2(40, 40))
+            ..worldY = arcY - 30.0,
+        );
+      } else {
+        add(
+          Coin(worldX: laneX, worldZ: currentZ, baseSize: Vector2(40, 40))
+            ..worldY = arcY - 30.0,
+        );
+      }
     }
   }
 
@@ -168,20 +185,26 @@ class KurirGame extends FlameGame with PanDetector, KeyboardEvents {
     double startZ,
     int count, {
     double spacing = 100.0,
+    bool addMagnet = false,
   }) {
+    int magnetIndex = addMagnet
+        ? (count ~/ 2)
+        : -1; // Magnet selalu di tengah barisan jika ada
     for (int i = 0; i < count; i++) {
-      add(
-        Coin(
-          worldX: laneX,
-          worldZ: startZ + (i * spacing),
-          baseSize: Vector2(40, 40),
-        ),
-      );
+      double currentZ = startZ + (i * spacing);
+      if (i == magnetIndex) {
+        add(Magnet(worldX: laneX, worldZ: currentZ, baseSize: Vector2(40, 40)));
+      } else {
+        add(Coin(worldX: laneX, worldZ: currentZ, baseSize: Vector2(40, 40)));
+      }
     }
   }
 
   void _spawnObstacle() {
     if (isGameOver) return;
+
+    // Peluang 10% untuk memunculkan Magnet secara rapi di dalam pola (Bukan asal taruh)
+    bool spawnMagnet = _random.nextDouble() < 0.10;
 
     // Beri jeda kosong jika pola sebelumnya sangat panjang agar tidak tumpang tindih
     if (_skipSpawnTicks > 0) {
@@ -190,20 +213,26 @@ class KurirGame extends FlameGame with PanDetector, KeyboardEvents {
       // Variasi "Filler": 50% Barisan Koin Panjang, 50% Blok Koin ala Subway Surfer
       if (_random.nextBool()) {
         final double fillerLane = (_random.nextInt(3) - 1).toDouble();
-        _spawnCoinLine(fillerLane * 180.0, 2200.0, 8, spacing: 90.0);
+        _spawnCoinLine(
+          fillerLane * 180.0,
+          2200.0,
+          8,
+          spacing: 90.0,
+          addMagnet: spawnMagnet,
+        );
       } else {
         // Blok Koin Lebar 3 Lajur x 3 Baris
         for (double l in [-1.0, 0.0, 1.0]) {
-          _spawnCoinLine(l * 180.0, 2200.0, 3, spacing: 120.0);
+          _spawnCoinLine(
+            l * 180.0,
+            2200.0,
+            3,
+            spacing: 120.0,
+            addMagnet: (l == 0.0) ? spawnMagnet : false,
+          );
         }
       }
       return;
-    }
-
-    // --- SPAWN MAGNET (Peluang 5% muncul secara acak) ---
-    if (_random.nextDouble() < 0.05) {
-      final double magLane = (_random.nextInt(3) - 1).toDouble() * 180.0;
-      add(Magnet(worldX: magLane, worldZ: 2500.0, baseSize: Vector2(40, 40)));
     }
 
     final double laneSpacing = 180.0;
@@ -234,8 +263,15 @@ class KurirGame extends FlameGame with PanDetector, KeyboardEvents {
             depthZ: 250.0,
           ),
         );
-        // Tambahkan koin melengkung di atas galian ini untuk panduan lompat
-        _spawnCoinArc(0.0, startZ + 1150.0, startZ + 1500.0, 4);
+        // Center arc disesuaikan TEPAT di atas titik tengah galian (Center galian = 1200 + 125 = 1325)
+        // Arc dari 1050 sampai 1600 = Center persis di 1325. Sangat rapi!
+        _spawnCoinArc(
+          0.0,
+          startZ + 1050.0,
+          startZ + 1600.0,
+          5,
+          addMagnetAtPeak: spawnMagnet,
+        );
         _skipSpawnTicks = 1;
         break;
 
@@ -249,16 +285,15 @@ class KurirGame extends FlameGame with PanDetector, KeyboardEvents {
           ),
         );
         final double safeLane = (_random.nextInt(3) - 1).toDouble();
-        for (int i = 0; i < 5; i++) {
-          // Koin sebagai penuntun di lajur aman
-          add(
-            Coin(
-              worldX: safeLane * laneSpacing,
-              worldZ: startZ + 200.0 + (i * 120.0),
-              baseSize: Vector2(40, 40),
-            ),
-          );
-        }
+
+        // Koin baris rapi melewati bawah portal
+        _spawnCoinLine(
+          safeLane * laneSpacing,
+          startZ + 200.0,
+          5,
+          spacing: 120.0,
+          addMagnet: spawnMagnet,
+        );
         break;
 
       case 2: // POLA 2: Emak-Emak Zig-Zag + Koin Penuntun Celah Aman
@@ -282,7 +317,13 @@ class KurirGame extends FlameGame with PanDetector, KeyboardEvents {
           ),
         );
         // Barisan 3 koin penuntun untuk celah aman kedua
-        _spawnCoinLine(-laneSpacing, startZ + 400.0, 3, spacing: 100.0);
+        _spawnCoinLine(
+          -laneSpacing,
+          startZ + 400.0,
+          3,
+          spacing: 100.0,
+          addMagnet: spawnMagnet,
+        ); // Selipkan magnet di jalur aman ini
 
         add(
           Obstacle(
@@ -317,15 +358,16 @@ class KurirGame extends FlameGame with PanDetector, KeyboardEvents {
             depthZ: 1200.0,
           ),
         );
-        for (int i = 0; i < 5; i++) {
-          add(
-            Coin(
-              worldX: 0.0,
-              worldZ: startZ + 150.0 + (i * 180.0),
-              baseSize: Vector2(40, 40),
-            ),
-          );
-        }
+
+        // Koin aman berada persis lurus di dalam terowongan
+        _spawnCoinLine(
+          0.0,
+          startZ + 150.0,
+          5,
+          spacing: 180.0,
+          addMagnet: spawnMagnet,
+        );
+
         // Jebakan emak-emak statis di ujung koin! Pemain harus sigap menghindar
         add(
           Obstacle(
@@ -340,6 +382,7 @@ class KurirGame extends FlameGame with PanDetector, KeyboardEvents {
 
       case 4: // POLA 4: Leap of Faith (Koin Melayang di atas Galian!)
         final double emptyLane = (_random.nextInt(3) - 1).toDouble();
+        bool magnetPlaced = false;
         for (double l in [-1.0, 0.0, 1.0]) {
           if (l == emptyLane) {
             add(
@@ -360,8 +403,16 @@ class KurirGame extends FlameGame with PanDetector, KeyboardEvents {
                 depthZ: 250.0,
               ),
             );
-            // Koin melengkung di udara mengikuti sudut elevasi dari lompatan user!
-            _spawnCoinArc(l * laneSpacing, startZ - 50.0, startZ + 300.0, 4);
+            // Arc ditarik presisi membungkus kedalaman galian (Center galian startZ + 125)
+            // Arc dari startZ - 150 sampai startZ + 400 = Center persis di startZ + 125.
+            _spawnCoinArc(
+              l * laneSpacing,
+              startZ - 150.0,
+              startZ + 400.0,
+              5,
+              addMagnetAtPeak: (spawnMagnet && !magnetPlaced),
+            );
+            magnetPlaced = true; // Cukup 1 magnet per pola
           }
         }
         break;
@@ -370,15 +421,13 @@ class KurirGame extends FlameGame with PanDetector, KeyboardEvents {
         final double safeLane5 = (_random.nextInt(3) - 1).toDouble();
         for (double l in [-1.0, 0.0, 1.0]) {
           if (l == safeLane5) {
-            for (int i = 0; i < 4; i++) {
-              add(
-                Coin(
-                  worldX: l * laneSpacing,
-                  worldZ: startZ + (i * 120.0),
-                  baseSize: Vector2(40, 40),
-                ),
-              );
-            }
+            _spawnCoinLine(
+              l * laneSpacing,
+              startZ,
+              4,
+              spacing: 120.0,
+              addMagnet: spawnMagnet,
+            );
           } else {
             add(
               Obstacle(
@@ -402,8 +451,14 @@ class KurirGame extends FlameGame with PanDetector, KeyboardEvents {
             depthZ: 250.0,
           ),
         );
-        // Ganti koin nimpa dengan koin melengkung (arc) lewati galian
-        _spawnCoinArc(0.0, startZ - 50.0, startZ + 300.0, 4);
+        // Center arc disesuaikan agar simetris mengangkangi galian
+        _spawnCoinArc(
+          0.0,
+          startZ - 150.0,
+          startZ + 400.0,
+          5,
+          addMagnetAtPeak: spawnMagnet,
+        );
 
         add(
           Obstacle(
@@ -632,7 +687,9 @@ class RoadBackground extends Component with HasGameRef<KurirGame> {
     }
 
     // Gunakan Modulo (%) agar siklus Siang-Malam berputar terus setiap 3000 meter!
-    final double cycleDistance = gameRef.distanceTravelled % 3000.0;
+    final double cycleDistance = gameRef.debugForceNight
+        ? 2000.0
+        : (gameRef.distanceTravelled % 3000.0);
 
     // Gerakkan bintang terus menerus jika sedang berada di fase Sore/Malam
     if (cycleDistance > 1000.0 && cycleDistance <= 3000.0) {
@@ -710,7 +767,9 @@ class RoadBackground extends Component with HasGameRef<KurirGame> {
     }
 
     // --- Menggambar Bintang di Malam Hari ---
-    final double cycleDistance = gameRef.distanceTravelled % 3000.0;
+    final double cycleDistance = gameRef.debugForceNight
+        ? 2000.0
+        : (gameRef.distanceTravelled % 3000.0);
     if (cycleDistance > 1000.0 && cycleDistance <= 3000.0) {
       for (int i = 0; i < _starX.length; i++) {
         canvas.drawCircle(
@@ -793,6 +852,7 @@ class RoadBackground extends Component with HasGameRef<KurirGame> {
         canvas.drawPath(_renderPath, linePaint);
       } else {
         // Garis Tengah (Putus-putus)
+        _renderPath.reset(); // RESET SEKALI DI SINI
         // Batasi render marka hingga 4000 saja. Di atas 4000 ukurannya lebih kecil
         // dari 1 pixel, menggambarnya sampai 20000 hanya membakar daya GPU dan bikin lag.
         for (double z = -200 - moveOffset; z < 4000; z += cycle) {
@@ -818,15 +878,15 @@ class RoadBackground extends Component with HasGameRef<KurirGame> {
           final screenX1 = center + (laneOffset * scale1);
           final screenX2 = center + (laneOffset * scale2);
 
-          _renderPath.reset();
           _renderPath
             ..moveTo(screenX1 - lineWidth1, screenY1)
             ..lineTo(screenX1 + lineWidth1, screenY1)
             ..lineTo(screenX2 + lineWidth2, screenY2)
             ..lineTo(screenX2 - lineWidth2, screenY2)
             ..close();
-          canvas.drawPath(_renderPath, linePaint);
         }
+        // GAMBAR SEMUA GARIS SEKALIGUS DALAM 1 PANGGILAN GPU! (HEMAT RESOURCE)
+        canvas.drawPath(_renderPath, linePaint);
       }
     }
   }
@@ -834,60 +894,59 @@ class RoadBackground extends Component with HasGameRef<KurirGame> {
 
 // --- Sistem Pencahayaan Malam Hari (Headlight Masking) ---
 class LightingSystem extends Component with HasGameRef<KurirGame> {
-  // Prioritas 50: Dirender di atas jalanan, tapi di bawah Player (100) dan HUD.
   LightingSystem() : super(priority: 50);
 
-  // Objek Paint yang didaur ulang (Anti-Lag)
   final Paint _darknessPaint = Paint()..color = Colors.black;
-  final Paint _beamPaint = Paint()
-    ..color = Colors.white.withAlpha(15); // Cahaya tipis
+  final Paint _holePunchPaint = Paint()
+    ..blendMode = BlendMode.dstOut; // Blur Dihapus (Sangat membebani FPS!)
+  final Paint _beamPaint = Paint(); // Blur Dihapus
+  final Paint _cachedLayerPaint = Paint(); // Di-cache agar tidak nyampah memory
   final Path _lightConePath = Path();
-  final Path _darknessPath = Path()..fillType = PathFillType.evenOdd;
 
   @override
   void render(Canvas canvas) {
-    final double cycleDistance = gameRef.distanceTravelled % 3000.0;
+    final double cycleDistance = gameRef.debugForceNight
+        ? 2000.0
+        : (gameRef.distanceTravelled % 3000.0);
     double darkness = 0.0;
 
-    // Kalkulasi tingkat kegelapan yang mulus seiring berjalannya jarak
     if (cycleDistance > 800.0 && cycleDistance <= 1500.0) {
-      // Sore ke malam (Kegelapan perlahan naik dari 0.0 ke 0.85)
-      darkness = ((cycleDistance - 800.0) / 700.0) * 0.85;
+      darkness = ((cycleDistance - 800.0) / 700.0) * 0.95;
     } else if (cycleDistance > 1500.0 && cycleDistance <= 2500.0) {
-      // Malam hari pekat (Hanya terlihat sedikit bayangan)
-      darkness = 0.85;
+      darkness = 0.95;
     } else if (cycleDistance > 2500.0) {
-      // Subuh menuju pagi (Kegelapan memudar kembali ke 0.0)
-      darkness = (1.0 - ((cycleDistance - 2500.0) / 500.0)) * 0.85;
+      darkness = (1.0 - ((cycleDistance - 2500.0) / 500.0)) * 0.95;
     }
 
-    // Hanya menggambar jika hari sudah mulai gelap untuk menghemat performa!
     if (darkness > 0.0) {
       final player = gameRef.player;
 
-      // --- Penyesuaian Lampu Dinamis ---
-      // Saat melompat (worldY negatif), sorot lampu akan sedikit lebih jauh ke depan.
-      // Normalisasi nilai lompatan antara 0.0 dan 1.0 untuk efek yang konsisten.
       final jumpOffset = (player.worldY / -150.0).clamp(0.0, 1.0);
 
-      // --- Parameter Sorot Lampu (Bisa Disesuaikan) ---
-      const double beamLength = 1200.0; // Seberapa jauh sorotan lampu ke depan
-      final adjustedBeamLength =
-          beamLength + (jumpOffset * 400.0); // Jarak bertambah saat lompat
-      const double nearBeamWidth = 150.0; // Lebar sorotan di dekat motor
-      const double farBeamWidth = 800.0; // Lebar sorotan di ujung
+      // --- Parameter Sorot Lampu Horizon Chase Style ---
+      const double beamLength =
+          5500.0; // Diperpanjang jauh agar menembus horizon
+      final adjustedBeamLength = beamLength + (jumpOffset * 400.0);
 
-      // Tentukan 4 titik sudut sorot lampu dalam ruang 3D
-      final zNear =
-          player.worldZ +
-          20; // Titik awal dibuat lebih dekat ke motor agar selaras
+      const double nearBeamWidth =
+          15.0; // Dipersempit (dipendekin lebarnya) agar mengerucut mirip segitiga tumpul
+      const double farBeamWidth =
+          1300.0; // Diperlebar sedikit lagi agar jangkauan pandangan ke samping lebih luas
+
+      final zNear = player.worldZ + 10;
       final zFar = player.worldZ + adjustedBeamLength;
 
-      // Proyeksikan 4 titik 3D tersebut ke koordinat layar 2D
       final scaleNear = gameRef.getScale(zNear);
       final scaleFar = gameRef.getScale(zFar);
 
-      final yNear = gameRef.horizonY + (gameRef.cameraHeight * scaleNear);
+      // Angkat titik asal sorotan (yNear) sejauh ~50 pixel ke atas.
+      // Angka -50 membuat lampunya lebih merunduk dan sangat nempel ke aspal.
+      // Ikut sertakan posisi Y pemain agar lampu ikut naik/turun presisi saat lompat atau nunduk!
+      final yNear =
+          gameRef.horizonY +
+          ((gameRef.cameraHeight + player.worldY + player.slideYOffset - 50.0) *
+              scaleNear);
+
       final yFar = gameRef.horizonY + (gameRef.cameraHeight * scaleFar);
 
       final xNearLeft =
@@ -904,37 +963,77 @@ class LightingSystem extends Component with HasGameRef<KurirGame> {
           (gameRef.size.x / 2) +
           ((player.worldX + farBeamWidth / 2) * scaleFar);
 
+      // Titik tengah ujung sorotan di horizon (Sebagai titik lengkung kurva halus)
+      final xFarCenter = (gameRef.size.x / 2) + (player.worldX * scaleFar);
+
       _lightConePath.reset();
       _lightConePath.moveTo(xNearLeft, yNear);
       _lightConePath.lineTo(xNearRight, yNear);
-      _lightConePath.lineTo(xFarRight, yFar);
-      _lightConePath.lineTo(xFarLeft, yFar);
+      _lightConePath.lineTo(
+        xFarRight,
+        yFar,
+      ); // Menyebar langsung ke ujung Kanan (Membentuk V)
+
+      // --- BENTUK NATURAL TANPA BLUR (100% No FPS Drop) ---
+      // Lengkungan sangat halus di ujung agar transisinya tidak terpotong garis lurus kaku
+      _lightConePath.quadraticBezierTo(xFarCenter, yFar - 10.0, xFarLeft, yFar);
+
       _lightConePath.close();
 
-      // --- OPTIMASI RENDER ANTI-LAG ---
-      // Gunakan PathFillType.evenOdd untuk "melubangi" kanvas secara presisi tanpa saveLayer() GPU!
-      _darknessPath.reset();
-      _darknessPath.addRect(
-        Rect.fromLTWH(
-          0,
-          gameRef.horizonY,
-          gameRef.size.x,
-          gameRef.size.y - gameRef.horizonY,
-        ),
+      // LinearGradient untuk membuat lubang cahaya makin samar menyatu dengan jalan
+      _holePunchPaint.shader = ui.Gradient.linear(
+        Offset(0, yNear), // Titik asal (Motor)
+        Offset(0, yFar), // Ujung cahaya (Horizon)
+        [
+          Colors.black.withOpacity(1.0), // Lubang terang benderang di pangkal
+          Colors.black.withOpacity(
+            0.85,
+          ), // Masih sangat jernih di pertengahan jalan
+          Colors.black.withOpacity(0.0), // Cahaya menyatu dengan gelap di ujung
+        ],
+        [
+          0.0,
+          0.65,
+          1.0,
+        ], // Jarak pandang bersih dipertahankan hingga 65% jarak sorotan
       );
-      _darknessPath.addPath(_lightConePath, Offset.zero);
 
-      _darknessPaint.color = Colors.black.withAlpha(
-        (darkness * 255).toInt().clamp(0, 255),
-      ); // Fix batas Alpha GPU!
+      // Gradien cahaya putih yang makin transparan di horizon
+      // Opacity diturunkan drastis agar tidak terlihat seperti "kabut/susu" yang menghalangi pandangan
+      _beamPaint.shader = ui.Gradient.linear(
+        Offset(0, yNear),
+        Offset(0, yFar),
+        [
+          Colors.white.withOpacity(
+            0.25,
+          ), // Cahaya tipis natural, jalanan terlihat aslinya
+          Colors.white.withOpacity(0.10),
+          Colors.white.withOpacity(0.0), // Pudar di ujung
+        ],
+        [0.0, 0.65, 1.0],
+      );
+
+      _darknessPaint.color = Colors.black.withOpacity(darkness);
+
+      final roadRect = Rect.fromLTWH(
+        0,
+        gameRef.horizonY,
+        gameRef.size.x,
+        gameRef.size.y - gameRef.horizonY,
+      );
+
+      // Gunakan saveLayer agar bisa menghapus area gelap dengan gradasi yang halus
+      canvas.saveLayer(roadRect, _cachedLayerPaint);
+      canvas.drawRect(roadRect, _darknessPaint); // Render lapisan malam total
       canvas.drawPath(
-        _darknessPath,
-        _darknessPaint,
-      ); // Render lapisan malam berlubang (Ringan!)
+        _lightConePath,
+        _holePunchPaint,
+      ); // Hapus pekatnya malam perlahan
       canvas.drawPath(
         _lightConePath,
         _beamPaint,
-      ); // Tambahkan sorotan halus transparan di atas aspal
+      ); // Tambahkan sorot lampu putih
+      canvas.restore();
     }
   }
 }

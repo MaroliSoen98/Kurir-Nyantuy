@@ -124,9 +124,6 @@ class Player extends SpriteComponent with HasGameRef<KurirGame> {
     // Efek Motion Animasi Belok (Miring/Lean) - Maksimal miring ~15 derajat (0.25 radian)
     angle = (dx * 0.003).clamp(-0.25, 0.25);
 
-    final activeChildren = gameRef.children
-        .toList(); // Ambil snapshot daftar objek sekali saja (Anti-Crash CME!)
-
     // Logika Nunduk
     if (isSliding) {
       sprite = _spriteNunduk; // Ganti ke sprite menunduk
@@ -156,7 +153,7 @@ class Player extends SpriteComponent with HasGameRef<KurirGame> {
         isMagnetActive = false;
       } else {
         // Telusuri koin-koin dan hisap mereka jika jaraknya masuk jangkauan
-        for (final child in activeChildren) {
+        for (final child in gameRef.children) {
           if (child is Coin && !child.isRemoving) {
             if (child.worldZ > worldZ && child.worldZ < worldZ + 1500.0) {
               double pullSpeed = 8.0 * dt;
@@ -202,7 +199,7 @@ class Player extends SpriteComponent with HasGameRef<KurirGame> {
 
     // --- LOGIKA TABRAKAN 3D MANUAL (SUPER RINGAN & 0 DELAY) ---
     // Menggantikan 100% sistem deteksi Quadtree Flame yang sangat membebani HP
-    for (final child in activeChildren) {
+    for (final child in gameRef.children) {
       if (child is Obstacle) {
         if (isInvincible || child.isRemoving) continue; // Abaikan jika kebal
 
