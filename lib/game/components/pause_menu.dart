@@ -116,9 +116,10 @@ class PauseMenuOverlay extends StatelessWidget {
                     game.overlays.remove(
                       'PauseButton',
                     ); // Hilangkan tombol pause
+                    game.isMainMenu =
+                        true; // Aktifkan mode live background kembali
                     game.resetGame(); // Reset data game
                     game.overlays.add('MainMenu'); // Tampilkan main menu
-                    game.pauseEngine(); // Hentikan game kembali ke state awal
                   },
                   child: const Text(
                     'KEMBALI KE MENU',

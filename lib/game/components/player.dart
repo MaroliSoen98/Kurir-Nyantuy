@@ -8,6 +8,8 @@ import 'obstacle.dart';
 import 'coin.dart';
 import 'coin_particle.dart';
 import 'magnet.dart';
+import 'shield.dart';
+import 'dust_particle.dart';
 
 class Player extends SpriteComponent with HasGameRef<KurirGame> {
   // -1: Kiri, 0: Tengah, 1: Kanan
@@ -31,14 +33,29 @@ class Player extends SpriteComponent with HasGameRef<KurirGame> {
   double slideTimer = 0;
   double slideYOffset = 0; // Offset visual saat nunduk
   double shakeTimer = 0; // Timer untuk efek goncangan tanpa membebani posisi 3D
+  double _dustTimer = 0; // Timer pengeluaran partikel debu
 
   bool hasShield = false; // Status Shield/Booster Aktif
+  double shieldDuration = 0; // Durasi shield
   bool isInvincible = false;
   double invincibilityTimer = 0;
 
   // Status Power Up Magnet
   bool isMagnetActive = false;
   double magnetDuration = 0;
+  double _magnetWaveTimer = 0; // Timer khusus untuk animasi gelombang magnet
+
+  // [OPTIMALISASI FPS] Pre-alokasi memori untuk Paint Aura Magnet
+  static final Paint _auraPaint = Paint()
+    ..color = Colors.lightBlueAccent.withAlpha(120)
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 6.0;
+
+  // [OPTIMALISASI FPS] Pre-alokasi memori untuk Paint Aura Shield
+  static final Paint _shieldAuraPaint = Paint()
+    ..color = Colors.greenAccent.withAlpha(120)
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 6.0;
 
   final Vector2 baseSize = Vector2(
     110,
@@ -146,8 +163,17 @@ class Player extends SpriteComponent with HasGameRef<KurirGame> {
       }
     }
 
+    // Logika Power Up Shield
+    if (hasShield) {
+      shieldDuration -= dt;
+      if (shieldDuration <= 0) {
+        hasShield = false;
+      }
+    }
+
     // Logika Power Up Magnet (Hisap Koin)
     if (isMagnetActive) {
+      _magnetWaveTimer += dt;
       magnetDuration -= dt;
       if (magnetDuration <= 0) {
         isMagnetActive = false;
@@ -197,6 +223,17 @@ class Player extends SpriteComponent with HasGameRef<KurirGame> {
           ((gameRef.cameraHeight + worldY + slideYOffset) * scale),
     );
 
+    // --- EFEK PARTIKEL DEBU SAAT NUNDUK ---
+    // Hanya munculkan debu jika motor sedang nunduk dan berada di tanah (worldY == 0)
+    if (isSliding && worldY >= 0) {
+      _dustTimer -= dt;
+      if (_dustTimer <= 0) {
+        gameRef.add(DustParticle(position: position.clone()));
+        _dustTimer =
+            0.05; // Atur jeda seberapa sering debu keluar (Makin kecil makin tebal)
+      }
+    }
+
     // --- LOGIKA TABRAKAN 3D MANUAL (SUPER RINGAN & 0 DELAY) ---
     // Menggantikan 100% sistem deteksi Quadtree Flame yang sangat membebani HP
     for (final child in gameRef.children) {
@@ -243,9 +280,7 @@ class Player extends SpriteComponent with HasGameRef<KurirGame> {
         // 4. Eksekusi Damage
         if (isHit) {
           if (hasShield) {
-            hasShield = false;
             obstacle.removeFromParent();
-            _triggerShake();
           } else {
             _triggerShake();
             gameRef.playerHit();
@@ -271,6 +306,16 @@ class Player extends SpriteComponent with HasGameRef<KurirGame> {
             (worldY - child.worldY).abs() < 80.0) {
           isMagnetActive = true;
           magnetDuration = 10.0; // Aktif selama 10 detik penuh
+          child.removeFromParent();
+        }
+      } else if (child is ShieldPowerUp) {
+        if (child.isRemoving) continue;
+
+        if ((worldZ - child.worldZ).abs() < 150.0 &&
+            (worldX - child.worldX).abs() < 90.0 &&
+            (worldY - child.worldY).abs() < 80.0) {
+          hasShield = true;
+          shieldDuration = 10.0; // Kebal selama 10 detik penuh
           child.removeFromParent();
         }
       }
@@ -299,15 +344,29 @@ class Player extends SpriteComponent with HasGameRef<KurirGame> {
   @override
   void render(Canvas canvas) {
     if (isMagnetActive) {
-      // Gambar lingkaran aura magnet biru di sekitar motor
-      final auraPaint = Paint()
-        ..color = Colors.lightBlueAccent.withAlpha(120)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 6.0;
+      // Gambar efek gelombang hisapan magnet (Contracting Waves)
+      final int waveCount = 3;
+      for (int i = 0; i < waveCount; i++) {
+        // wavePhase mengecil dari 1.0 ke 0.0 secara berulang untuk efek menarik ke dalam
+        double wavePhase =
+            1.0 - ((_magnetWaveTimer * 2.0 + (i / waveCount)) % 1.0);
+
+        double radius = size.x * 0.2 + (size.x * 0.8 * wavePhase);
+        int alpha = (180 * wavePhase).toInt().clamp(0, 255);
+
+        _auraPaint.color = Colors.lightBlueAccent.withAlpha(alpha);
+        _auraPaint.strokeWidth = 2.0 + (5.0 * wavePhase);
+
+        canvas.drawCircle(Offset(size.x / 2, size.y / 2), radius, _auraPaint);
+      }
+    }
+    if (hasShield) {
+      // Gambar lingkaran aura hijau di sekitar motor
       canvas.drawCircle(
         Offset(size.x / 2, size.y / 2),
-        size.x * 0.6,
-        auraPaint,
+        size.x *
+            0.65, // Sedikit lebih besar dari aura magnet agar tidak terlalu bertumpuk
+        _shieldAuraPaint,
       );
     }
     super.render(canvas); // Render motor di atas aura

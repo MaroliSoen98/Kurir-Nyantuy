@@ -63,14 +63,22 @@ class GameOverOverlay extends StatelessWidget {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              Text(
-                '${game.distanceTravelled.toInt()} M',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 48,
-                  fontWeight: FontWeight.w900,
-                  fontStyle: FontStyle.italic,
-                ),
+              // Animasi hitung untuk skor jarak
+              TweenAnimationBuilder<double>(
+                tween: Tween<double>(begin: 0, end: game.distanceTravelled),
+                duration: const Duration(milliseconds: 1500),
+                curve: Curves.easeOutCubic,
+                builder: (context, value, child) {
+                  return Text(
+                    '${value.toInt()} M',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 48,
+                      fontWeight: FontWeight.w900,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  );
+                },
               ),
               const SizedBox(height: 10),
               // Coin Box
@@ -88,13 +96,24 @@ class GameOverOverlay extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const Text('🪙 ', style: TextStyle(fontSize: 24)),
-                    Text(
-                      '+${game.currentCoins} CUAN',
-                      style: const TextStyle(
-                        color: Colors.yellowAccent,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
+                    // Animasi hitung untuk perolehan koin
+                    TweenAnimationBuilder<double>(
+                      tween: Tween<double>(
+                        begin: 0,
+                        end: game.currentCoins.toDouble(),
                       ),
+                      duration: const Duration(milliseconds: 1500),
+                      curve: Curves.easeOutCubic,
+                      builder: (context, value, child) {
+                        return Text(
+                          '+${value.toInt()} CUAN',
+                          style: const TextStyle(
+                            color: Colors.yellowAccent,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -142,7 +161,10 @@ class GameOverOverlay extends StatelessWidget {
                   ),
                   onPressed: () {
                     game.overlays.remove('GameOver');
-                    game.resetGame();
+                    game.isMainMenu =
+                        true; // Aktifkan kembali mode live background
+                    game.resetGame(); // Reset semua data permainan
+                    game.resumeEngine(); // Jalankan lagi game loop untuk animasi
                     game.overlays.add('MainMenu');
                   },
                   child: const Text(

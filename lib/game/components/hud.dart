@@ -17,6 +17,7 @@ class HudComponent extends PositionComponent with HasGameRef<KurirGame> {
 
   // Simpan warna Paint di awal agar tidak dibuat berulang di fungsi render (Anti-Lag)
   final Paint _magnetFillPaint = Paint()..color = Colors.lightBlueAccent;
+  final Paint _shieldFillPaint = Paint()..color = Colors.greenAccent;
 
   HudComponent() : super(priority: 100);
 
@@ -134,6 +135,13 @@ class HudComponent extends PositionComponent with HasGameRef<KurirGame> {
   }
 
   @override
+  void renderTree(Canvas canvas) {
+    // Blokir render tree agar background beserta seluruh teks/ikon anaknya tersembunyi
+    if (gameRef.isMainMenu) return;
+    super.renderTree(canvas);
+  }
+
+  @override
   void render(Canvas canvas) {
     // Background Indikator Jarak
     final distanceBg = Rect.fromLTWH(20, 20, 130, 46);
@@ -170,6 +178,33 @@ class HudComponent extends PositionComponent with HasGameRef<KurirGame> {
           magnetBg.height - 6,
         );
         canvas.drawRect(fillRect, _magnetFillPaint);
+      }
+    }
+
+    // --- Indikator Bar Shield (Hanya muncul jika shield aktif) ---
+    if (gameRef.player.hasShield) {
+      // Jika magnet aktif, taruh shield di bawah bar magnet, jika tidak taruh di tempat magnet
+      double yOffset = gameRef.player.isMagnetActive ? 104.0 : 76.0;
+      final shieldBg = Rect.fromLTWH(gameRef.size.x - 150, yOffset, 130, 22);
+
+      // Gambar frame bar shield dengan style retro
+      canvas.drawRect(shieldBg.translate(3, 3), _panelShadowPaint); // Shadow
+      canvas.drawRect(shieldBg, _panelBorderPaint); // Border Putih
+      canvas.drawRect(
+        shieldBg.deflate(3),
+        _panelShadowPaint,
+      ); // Base Hitam Dalam
+
+      // Isi Bar Shield (Warna hijau menyusut)
+      double ratio = (gameRef.player.shieldDuration / 10.0).clamp(0.0, 1.0);
+      if (ratio > 0) {
+        final fillRect = Rect.fromLTWH(
+          shieldBg.left + 3,
+          shieldBg.top + 3,
+          (shieldBg.width - 6) * ratio,
+          shieldBg.height - 6,
+        );
+        canvas.drawRect(fillRect, _shieldFillPaint);
       }
     }
 

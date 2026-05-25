@@ -141,13 +141,32 @@ class MainMenuOverlay extends StatelessWidget {
                     game.overlays.remove('MainMenu');
                     game.startGame(); // Mulai jalankan game beserta BGM
                   },
-                  child: const Text(
-                    'GASPOL NGAB! 🚀',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w900,
-                      fontStyle: FontStyle.italic,
-                    ),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'GASPOL MANG! ',
+                        style: TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w900,
+                          fontStyle: FontStyle.italic,
+                          color: Colors.white,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black,
+                              blurRadius: 0,
+                              offset: Offset(4, 4), // Bayangan tajam pixel art
+                            ),
+                          ],
+                        ),
+                      ),
+                      Text(
+                        '🚀',
+                        style: TextStyle(
+                          fontSize: 28,
+                        ), // Emoji polos tanpa shadow
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -159,7 +178,7 @@ class MainMenuOverlay extends StatelessWidget {
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF00E5FF), // Cyan cerah
-                    foregroundColor: Colors.black,
+                    foregroundColor: Colors.white,
                     elevation: 0,
                     shape: const ContinuousRectangleBorder(
                       // Bentuk kaku Pixel Art
@@ -169,9 +188,31 @@ class MainMenuOverlay extends StatelessWidget {
                   onPressed: () {
                     // TODO: Ke menu Shop
                   },
-                  child: const Text(
-                    'BENGKEL MANG OLEH 🛠️',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'BENGKEL MANG OLEH ',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black,
+                              blurRadius: 0,
+                              offset: Offset(3, 3), // Bayangan kaku
+                            ),
+                          ],
+                        ),
+                      ),
+                      Text(
+                        '🛠️',
+                        style: TextStyle(
+                          fontSize: 20,
+                        ), // Emoji polos tanpa shadow
+                      ),
+                    ],
                   ),
                 ),
               ),
