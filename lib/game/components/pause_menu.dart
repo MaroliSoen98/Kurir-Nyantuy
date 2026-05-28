@@ -15,125 +15,91 @@ class PauseMenuOverlay extends StatelessWidget {
         child: Container(
           width: MediaQuery.of(context).size.width * 0.85,
           padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: const Color(0xFF2A2A35), // Biru dongker gelap khas Retro RPG
-            border: Border.all(
-              color: Colors.white,
-              width: 4,
-            ), // Ketebalan ala Pixel Art
-            borderRadius: BorderRadius.zero, // Sudut tajam kaku
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0xFF111111),
-                blurRadius: 0,
-                offset: Offset(6, 6), // Hard shadow khas retro arcade
-              ),
-            ],
+          decoration: const BoxDecoration(
+            image: DecorationImage(
+              // TODO: Sesuaikan nama file gambar aset kotak background pause kamu!
+              image: AssetImage('assets/images/panel_pause.png'),
+              fit: BoxFit.fill, // Memaksa gambar melebar penuh mengisi kotak
+            ),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Judul Pause
-              const Text(
-                'PAUSE',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 56,
-                  height: 1.0,
-                  fontWeight: FontWeight.w900,
-                  fontStyle: FontStyle.italic,
-                  color: Color(0xFFFFD700), // Kuning Emas Cerah
-                  shadows: [
-                    Shadow(
-                      color: Colors.black,
-                      blurRadius: 0,
-                      offset: Offset(4, 4),
-                    ),
-                  ],
-                ),
+              // Judul Pause Utama (SEBENTAR BRO)
+              Image.asset(
+                // TODO: Sesuaikan dengan nama file gambar aset 'Sebentar Bro'
+                'assets/images/title_sebentar.png',
+                height: 90, // Ukuran diperbesar lagi
+                fit: BoxFit.contain,
               ),
-              const SizedBox(height: 12),
-              const Text(
-                'GAME DIJEDA',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                  shadows: [
-                    Shadow(
-                      color: Colors.black,
-                      blurRadius: 0,
-                      offset: Offset(2, 2),
-                    ),
-                  ],
-                ),
+              const SizedBox(height: 12), // Jarak antara kedua teks
+              // Sub Judul Pause (NGASO DULU)
+              Image.asset(
+                // TODO: Sesuaikan dengan nama file gambar aset 'Ngaso Dulu'
+                'assets/images/title_ngaso.png',
+                height: 20, // Ukuran dikecilkan lagi
+                fit: BoxFit.contain,
               ),
               const SizedBox(height: 36),
               // Tombol Lanjut (Resume)
-              SizedBox(
-                width: double.infinity,
-                height: 60,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF00E5FF), // Cyan retro
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: const RoundedRectangleBorder(
-                      borderRadius: BorderRadius.zero, // Kotak tajam pixel art
-                      side: BorderSide(color: Colors.white, width: 3),
+              GestureDetector(
+                onTap: () {
+                  game.resumeGame();
+                },
+                child: Container(
+                  width: double.infinity,
+                  height:
+                      70, // Tinggi tombol bisa kamu sesuaikan biar pas sama gambar
+                  decoration: const BoxDecoration(
+                    image: DecorationImage(
+                      // TODO: Ganti dengan nama file gambar aset tombol kamu!
+                      image: AssetImage('assets/images/btn_lanjut.png'),
+                      fit: BoxFit.fill,
                     ),
                   ),
-                  onPressed: () {
-                    game.resumeGame();
-                  },
+                  alignment: Alignment.center,
                   child: const Text(
-                    'LANJUT MAIN',
+                    'YOK LANJUT',
                     style: TextStyle(
-                      fontSize: 22,
+                      fontFamily: 'PixelFont',
+                      fontSize: 30, // Sedikit dibesarkan biar makin jelas
                       fontWeight: FontWeight.w900,
-                      color: Colors.black,
+                      color: Colors
+                          .black, // Ubah warna teksnya kalau tabrakan sama warna gambarmu
                     ),
                   ),
                 ),
               ),
               const SizedBox(height: 16),
               // Tombol Main Menu (Quit)
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFF2A6D), // Pink retro
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: const RoundedRectangleBorder(
-                      borderRadius: BorderRadius.zero,
-                      side: BorderSide(color: Colors.white, width: 3),
+              GestureDetector(
+                onTap: () {
+                  game.resumeGame(); // Hapus overlay pause
+                  game.overlays.remove('PauseButton'); // Hilangkan tombol pause
+                  game.isMainMenu =
+                      true; // Aktifkan mode live background kembali
+                  game.resetGame(); // Reset data game
+                  game.overlays.add('MainMenu'); // Tampilkan main menu
+                },
+                child: Container(
+                  width: double.infinity,
+                  height: 70, // Sama persis dengan tombol "YOK LANJUT" di atas
+                  decoration: const BoxDecoration(
+                    image: DecorationImage(
+                      // TODO: Ganti dengan nama file gambar aset tombol 'Main Menu' milikmu
+                      image: AssetImage('assets/images/btn_menu.png'),
+                      fit: BoxFit.fill,
                     ),
                   ),
-                  onPressed: () {
-                    game.resumeGame(); // Hapus overlay pause
-                    game.overlays.remove(
-                      'PauseButton',
-                    ); // Hilangkan tombol pause
-                    game.isMainMenu =
-                        true; // Aktifkan mode live background kembali
-                    game.resetGame(); // Reset data game
-                    game.overlays.add('MainMenu'); // Tampilkan main menu
-                  },
+                  alignment: Alignment.center,
                   child: const Text(
-                    'KEMBALI KE MENU',
+                    'BALIK MENU', // Teks aku persingkat, hapus aja kalau gambarmu udah ada teksnya
                     style: TextStyle(
-                      fontSize: 18,
+                      fontFamily: 'PixelFont',
+                      fontSize: 30, // Sama dengan tombol di atas
                       fontWeight: FontWeight.w900,
-                      color: Colors.white,
-                      shadows: [
-                        Shadow(
-                          color: Colors.black,
-                          blurRadius: 0,
-                          offset: Offset(2, 2),
-                        ),
-                      ],
+                      color: Colors
+                          .black, // Sesuaikan warna bila menabrak warna gambarmu
                     ),
                   ),
                 ),

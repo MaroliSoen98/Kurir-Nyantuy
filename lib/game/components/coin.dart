@@ -1,13 +1,14 @@
 import 'package:flame/components.dart';
-import 'dart:math';
 import 'package:flutter/material.dart';
 import '../kurir_game.dart';
 
-class Coin extends SpriteComponent with HasGameRef<KurirGame> {
+class Coin extends PositionComponent with HasGameRef<KurirGame> {
   double worldX;
   double worldY = -30; // Melayang sedikit di atas jalan
   double worldZ;
   final Vector2 baseSize;
+  Sprite? sprite;
+  final Paint paint = Paint();
 
   Coin({required this.worldX, required this.worldZ, required this.baseSize})
     : super(anchor: Anchor.center);
@@ -17,13 +18,11 @@ class Coin extends SpriteComponent with HasGameRef<KurirGame> {
     super.onLoad();
 
     try {
-      sprite = Sprite(
-        gameRef.images.fromCache('koin.png'),
-      ); // Panggil Instan dari Cache
+      sprite = Sprite(gameRef.images.fromCache('koin.png'));
     } catch (e) {
-      // Fallback aman
+      // Fallback
     }
-    paint.filterQuality = FilterQuality.none;
+    paint.filterQuality = FilterQuality.none; // Anti-blur untuk Pixel Art
   }
 
   @override
@@ -41,11 +40,25 @@ class Coin extends SpriteComponent with HasGameRef<KurirGame> {
 
     // Proyeksi Skala Pseudo-3D
     final scale = gameRef.getScale(worldZ);
-    // Gunakan setValues untuk mencegah GC lag
-    size.setValues(baseSize.x * 4.0 * scale, baseSize.y * 4.0 * scale);
+
+    size.setValues(
+      baseSize.x * 3.0 * scale, // Diperbesar 3x lipat agar sangat jelas
+      baseSize.y * 3.0 * scale, // Diperbesar 3x lipat agar sangat jelas
+    );
+
     position.setValues(
       (gameRef.size.x / 2) + (worldX * scale),
       gameRef.horizonY + ((gameRef.cameraHeight + worldY) * scale),
     );
+  }
+
+  @override
+  void render(Canvas canvas) {
+    if (sprite != null) {
+      sprite!.render(canvas, size: size, overridePaint: paint);
+    } else {
+      // Asset sementara berupa lingkaran emas jika gambar tidak ada
+      canvas.drawOval(size.toRect(), Paint()..color = const Color(0xFFFFD700));
+    }
   }
 }

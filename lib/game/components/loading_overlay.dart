@@ -106,9 +106,10 @@ class _LoadingOverlayState extends State<LoadingOverlay>
             const SizedBox(height: 24),
             // 2. Teks loading
             const Text(
-              'SIAP-SIAP MANG...', // Nuansa santuy
+              'LAGI MANASIN MOTOR..', // Nuansa santuy
               style: TextStyle(
-                fontSize: 32,
+                fontFamily: 'PixelFont',
+                fontSize: 40,
                 fontWeight: FontWeight.w900,
                 fontStyle: FontStyle.italic,
                 color: Colors.white,

@@ -7,7 +7,7 @@ class HudComponent extends PositionComponent with HasGameRef<KurirGame> {
   late TextComponent coinText;
   late SpriteComponent
   coinIcon; // Kita gunakan SpriteComponent untuk gambar aset
-  late TextComponent livesText; // Tambahkan deklarasi untuk teks nyawa (hati)
+  Sprite? heartSprite; // Sprite langsung untuk gambar aset nyawa (hati)
 
   // Palet Warna Panel UI Pixel Art Retro (Solid, tanpa transparansi)
   final Paint _panelBorderPaint = Paint()..color = const Color(0xFFFFFFFF);
@@ -41,6 +41,7 @@ class HudComponent extends PositionComponent with HasGameRef<KurirGame> {
       text: '0',
       textRenderer: TextPaint(
         style: const TextStyle(
+          fontFamily: 'PixelFont', // Font Retro Pixel
           color: Color(0xFFFFD700), // Warna Emas
           fontSize: 22,
           fontWeight: FontWeight.w900,
@@ -59,6 +60,7 @@ class HudComponent extends PositionComponent with HasGameRef<KurirGame> {
       text: '0 M',
       textRenderer: TextPaint(
         style: const TextStyle(
+          fontFamily: 'PixelFont', // Font Retro Pixel
           color: Color(0xFF00E5FF), // Warna Cyan Neon retro
           fontSize: 22,
           fontWeight: FontWeight.w900,
@@ -71,20 +73,12 @@ class HudComponent extends PositionComponent with HasGameRef<KurirGame> {
     );
     add(distanceText);
 
-    // 4. Setup Teks Nyawa (Hearts)
-    livesText = TextComponent(
-      text: '❤️❤️❤️', // Placeholder awal
-      textRenderer: TextPaint(
-        style: const TextStyle(
-          fontSize: 20,
-          shadows: [
-            Shadow(color: Colors.black, blurRadius: 0, offset: Offset(3, 3)),
-          ],
-        ),
-      ),
-      anchor: Anchor.center,
-    );
-    add(livesText);
+    // 4. Setup Aset Gambar Nyawa (Hearts)
+    try {
+      heartSprite = Sprite(gameRef.images.fromCache('heart.png'));
+    } catch (e) {
+      // Biarkan kosong dengan aman jika gambar heart.png belum tersedia
+    }
   }
 
   @override
@@ -102,14 +96,6 @@ class HudComponent extends PositionComponent with HasGameRef<KurirGame> {
       coinText.text = newCoin;
     }
 
-    // Update jumlah nyawa (Mencegah error string jika nyawa minus)
-    int lives = gameRef.playerLives;
-    if (lives < 0) lives = 0;
-    final newLives = '❤️' * lives;
-    if (livesText.text != newLives) {
-      livesText.text = newLives;
-    }
-
     // Responsif: Posisikan elemen UI dengan tepat
     // Posisi Indikator Jarak (Di Kiri Atas)
     distanceText.position = Vector2(85, 43);
@@ -117,9 +103,6 @@ class HudComponent extends PositionComponent with HasGameRef<KurirGame> {
     // Posisi Indikator Koin dan Gambar Asetnya (Di Bawah Indikator Jarak)
     coinIcon.position = Vector2(40, 99);
     coinText.position = Vector2(80, 99);
-
-    // Posisi Indikator Nyawa (Di Kanan Atas Layar)
-    livesText.position = Vector2(gameRef.size.x - 85, 43);
   }
 
   // Helper untuk menggambar panel ala Pixel Art RPG
@@ -154,6 +137,30 @@ class HudComponent extends PositionComponent with HasGameRef<KurirGame> {
     // Background Indikator Nyawa
     final livesBg = Rect.fromLTWH(gameRef.size.x - 150, 20, 130, 46);
     _drawRetroPanel(canvas, livesBg);
+
+    // --- Render Gambar Hati (Nyawa) di Atas Panel ---
+    if (heartSprite != null) {
+      int lives = gameRef.playerLives;
+      if (lives < 0) lives = 0;
+
+      double startX =
+          gameRef.size.x - 135.0; // Margin kiri sedikit ke dalam panel
+      double yPos = 28.0; // Tinggi rata tengah panel
+
+      for (int i = 0; i < lives; i++) {
+        heartSprite!.render(
+          canvas,
+          position: Vector2(
+            startX + (i * 35.0),
+            yPos,
+          ), // Geser 35 pixel per gambar
+          size: Vector2(
+            30,
+            30,
+          ), // Ukuran gambar hati (Silakan sesuaikan jika kurang pas!)
+        );
+      }
+    }
 
     // --- Indikator Bar Magnet (Hanya muncul jika magnet aktif) ---
     if (gameRef.player.isMagnetActive) {

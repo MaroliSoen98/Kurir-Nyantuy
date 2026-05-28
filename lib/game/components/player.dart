@@ -10,6 +10,8 @@ import 'coin_particle.dart';
 import 'magnet.dart';
 import 'shield.dart';
 import 'dust_particle.dart';
+import 'puddle.dart';
+import 'water_splash_particle.dart';
 
 class Player extends SpriteComponent with HasGameRef<KurirGame> {
   // -1: Kiri, 0: Tengah, 1: Kanan
@@ -32,6 +34,7 @@ class Player extends SpriteComponent with HasGameRef<KurirGame> {
   bool isSliding = false;
   double slideTimer = 0;
   double slideYOffset = 0; // Offset visual saat nunduk
+  bool isMogok = false; // Status apakah motor sedang rusak
   double shakeTimer = 0; // Timer untuk efek goncangan tanpa membebani posisi 3D
   double _dustTimer = 0; // Timer pengeluaran partikel debu
 
@@ -57,6 +60,9 @@ class Player extends SpriteComponent with HasGameRef<KurirGame> {
     ..style = PaintingStyle.stroke
     ..strokeWidth = 6.0;
 
+  // Menyimpan referensi efek damage agar bisa dibatalkan secara instan walau masih di dalam antrean (Add Queue) Flame
+  final List<Effect> _damageEffects = [];
+
   final Vector2 baseSize = Vector2(
     110,
     150,
@@ -65,6 +71,7 @@ class Player extends SpriteComponent with HasGameRef<KurirGame> {
   // Variabel untuk menyimpan sprite yang sudah di-load agar bisa diganti-ganti
   Sprite? _spriteNormal;
   Sprite? _spriteNunduk;
+  Sprite? _spriteMogok;
 
   // Untuk sementara kita pakai kotak warna sebagai placeholder aset pixel motor
   Player()
@@ -82,11 +89,62 @@ class Player extends SpriteComponent with HasGameRef<KurirGame> {
     try {
       _spriteNormal = Sprite(gameRef.images.fromCache('motor.png'));
       _spriteNunduk = Sprite(gameRef.images.fromCache('motor_nunduk.png'));
+      _spriteMogok = Sprite(gameRef.images.fromCache('motor_mogok.png'));
       sprite = _spriteNormal; // Atur sprite awal ke kondisi normal
     } catch (e) {
       debugPrint("Sprite motor tidak ditemukan di cache: $e");
     }
     paint.filterQuality = FilterQuality.none; // Mencegah pixel art menjadi blur
+  }
+
+  // Memunculkan sprite motor mogok saat game over
+  void showMogok() {
+    if (_spriteMogok != null) {
+      sprite = _spriteMogok;
+      slideYOffset =
+          0; // Pastikan posisi visual tidak turun seperti saat nunduk
+      isMogok = true; // Kunci perubahan sprite di fungsi update
+
+      scale.setValues(
+        1.3,
+        1.3,
+      ); // Perbesar skala gambar mogok (30%) agar terlihat seimbang dengan motor aslinya
+    }
+  }
+
+  // Fungsi untuk mengembalikan kondisi pemain ke awal seperti baru
+  void reset() {
+    currentLane = 0;
+    targetWorldX = 0;
+    worldX = 0;
+    worldY = 0;
+    velocityY = 0;
+    isJumping = false;
+    hasMovedInAir = false;
+    isSliding = false;
+    slideTimer = 0;
+    slideYOffset = 0;
+    isMogok = false; // Matikan status mogok saat direstart
+    shakeTimer = 0; // Hentikan efek getaran tersisa
+    hasShield = false;
+    shieldDuration = 0;
+    isInvincible = false;
+    invincibilityTimer = 0;
+    isMagnetActive = false;
+    magnetDuration = 0;
+    angle = 0;
+
+    // Membatalkan efek yang masih mengantre di memory (Add Queue) akibat game over mendadak
+    for (final effect in _damageEffects) {
+      effect.removeFromParent();
+    }
+    _damageEffects.clear();
+
+    // Hapus semua efek visual yang membeku saat game over
+    removeAll(children.whereType<Effect>().toList());
+    scale.setValues(1.0, 1.0); // Kembalikan ukuran motor ke normal
+    paint.color = Colors.white; // Reset warna/transparan
+    paint.colorFilter = null; // Hapus sisa warna merah
   }
 
   void moveLeft() {
@@ -142,17 +200,19 @@ class Player extends SpriteComponent with HasGameRef<KurirGame> {
     angle = (dx * 0.003).clamp(-0.25, 0.25);
 
     // Logika Nunduk
-    if (isSliding) {
-      sprite = _spriteNunduk; // Ganti ke sprite menunduk
-      slideYOffset =
-          35.0; // Turunkan posisi visual pemain agar terlihat 'di kolong'
-      slideTimer -= dt;
-      if (slideTimer <= 0) {
-        isSliding = false; // Kembali berdiri
+    if (!isMogok) {
+      if (isSliding) {
+        sprite = _spriteNunduk; // Ganti ke sprite menunduk
+        slideYOffset =
+            35.0; // Turunkan posisi visual pemain agar terlihat 'di kolong'
+        slideTimer -= dt;
+        if (slideTimer <= 0) {
+          isSliding = false; // Kembali berdiri
+        }
+      } else {
+        sprite = _spriteNormal; // Kembali ke sprite normal
+        slideYOffset = 0; // Kembalikan posisi visual
       }
-    } else {
-      sprite = _spriteNormal; // Kembali ke sprite normal
-      slideYOffset = 0; // Kembalikan posisi visual
     }
 
     // Logika Kebal Sesaat (Invincibility)
@@ -244,16 +304,22 @@ class Player extends SpriteComponent with HasGameRef<KurirGame> {
 
         // 1. Cek Sumbu Z (Kedalaman / Depan-Belakang)
         bool inZRange =
-            worldZ >= (obstacle.worldZ - 80.0) &&
-            worldZ <= (obstacle.worldZ + obstacle.depthZ + 80.0);
+            worldZ >=
+                (obstacle.worldZ -
+                    40.0) && // Dipersempit agar motor menabrak tepat di body
+            worldZ <= (obstacle.worldZ + obstacle.depthZ + 40.0);
         if (!inZRange) continue;
 
         // 2. Cek Sumbu X (Lajur Kiri/Tengah/Kanan)
-        double obstacleWidth = obstacle.baseSize.x * 0.9;
+        double obstacleWidth =
+            obstacle.baseSize.x *
+            0.6; // Hitbox rintangan dibuat lebih kecil (mengabaikan ruang kosong pinggiran gambar)
         double obstacleLeft = obstacle.worldX - (obstacleWidth / 2);
         double obstacleRight = obstacle.worldX + (obstacleWidth / 2);
 
-        double playerWidth = baseSize.x * 0.5;
+        double playerWidth =
+            baseSize.x *
+            0.4; // Hitbox badan motor dirampingkan mengikuti visual motor
         double playerLeft = worldX - (playerWidth / 2);
         double playerRight = worldX + (playerWidth / 2);
 
@@ -265,15 +331,15 @@ class Player extends SpriteComponent with HasGameRef<KurirGame> {
         bool isHit = false;
         if (obstacle.isFloating) {
           // PORTAL: Wajib nunduk. Lompat atau diam = nabrak
-          isHit = isJumping || !isSliding;
+          isHit = !isSliding;
         } else {
           if (obstacle.isSmall) {
-            // GALIAN: Pemain harus melompat cukup tinggi untuk melewatinya
-            isHit = worldY > -30.0;
+            // GALIAN: Hitbox bawah dirapatkan, pemain harus melompat melebihi aspal (ketinggian > 40)
+            isHit = worldY > -40.0;
           } else {
             // RINTANGAN NORMAL (Emak-emak & Tembok):
-            // Bisa dilompati asalkan pemain sedang melompat cukup tinggi!
-            isHit = worldY > -60.0;
+            // Pemain harus melompat cukup tinggi (> 100) jika ingin melewatinya dari atas
+            isHit = worldY > -100.0;
           }
         }
 
@@ -290,20 +356,22 @@ class Player extends SpriteComponent with HasGameRef<KurirGame> {
       } else if (child is Coin) {
         if (child.isRemoving) continue;
 
-        // Jarak deteksi matematika murni 3D Koin (Jauh lebih ringan dari mengecek Hitbox Polygon)
-        if ((worldZ - child.worldZ).abs() < 150.0 &&
-            (worldX - child.worldX).abs() < 90.0 &&
-            (worldY - child.worldY).abs() < 80.0) {
+        // Jarak deteksi (Hitbox) Koin yang lebih presisi (Harus tersentuh)
+        if ((worldZ - child.worldZ).abs() < 60.0 &&
+            (worldX - child.worldX).abs() < 50.0 &&
+            (worldY - child.worldY).abs() < 60.0) {
           gameRef.currentCoins++;
-          gameRef.add(CoinParticle(position: child.position));
+          gameRef.add(
+            CoinParticle(position: child.position, sprite: child.sprite!),
+          );
           child.removeFromParent();
         }
       } else if (child is Magnet) {
         if (child.isRemoving) continue;
 
-        if ((worldZ - child.worldZ).abs() < 150.0 &&
-            (worldX - child.worldX).abs() < 90.0 &&
-            (worldY - child.worldY).abs() < 80.0) {
+        if ((worldZ - child.worldZ).abs() < 60.0 &&
+            (worldX - child.worldX).abs() < 50.0 &&
+            (worldY - child.worldY).abs() < 60.0) {
           isMagnetActive = true;
           magnetDuration = 10.0; // Aktif selama 10 detik penuh
           child.removeFromParent();
@@ -311,12 +379,23 @@ class Player extends SpriteComponent with HasGameRef<KurirGame> {
       } else if (child is ShieldPowerUp) {
         if (child.isRemoving) continue;
 
-        if ((worldZ - child.worldZ).abs() < 150.0 &&
-            (worldX - child.worldX).abs() < 90.0 &&
-            (worldY - child.worldY).abs() < 80.0) {
+        if ((worldZ - child.worldZ).abs() < 60.0 &&
+            (worldX - child.worldX).abs() < 50.0 &&
+            (worldY - child.worldY).abs() < 60.0) {
           hasShield = true;
           shieldDuration = 10.0; // Kebal selama 10 detik penuh
           child.removeFromParent();
+        }
+      } else if (child is Puddle) {
+        if (child.isRemoving || child.hasSplashed) continue;
+
+        // Cek apakah ban motor menyentuh genangan air (Hitbox X dan Z, serta Y > -20.0 agar tidak terpicu saat melompat)
+        if ((worldZ - child.worldZ).abs() < 60.0 &&
+            (worldX - child.worldX).abs() < (child.baseSize.x / 2) &&
+            worldY > -20.0) {
+          // Syarat mutlak: motor harus menyentuh aspal
+          child.hasSplashed = true;
+          gameRef.add(WaterSplashParticle(position: position.clone()));
         }
       }
     }
@@ -332,13 +411,36 @@ class Player extends SpriteComponent with HasGameRef<KurirGame> {
     isInvincible = true;
     invincibilityTimer = 1.5; // Kebal selama 1.5 detik
 
+    // Bersihkan penumpukan efek jika tabrakan beruntun
+    for (final effect in _damageEffects) {
+      effect.removeFromParent();
+    }
+    _damageEffects.clear();
+
     // Efek Kedip-kedip (Blinking)
-    add(
-      OpacityEffect.to(
-        0.3,
-        EffectController(duration: 0.15, alternate: true, repeatCount: 5),
-      ),
+    final opacityEffect = OpacityEffect.to(
+      0.3,
+      EffectController(duration: 0.15, alternate: true, repeatCount: 5),
     );
+
+    // Efek Transisi Warna Merah (Damage Flash)
+    final colorEffect = ColorEffect(
+      Colors.red,
+      EffectController(duration: 0.15, alternate: true, repeatCount: 5),
+      opacityTo:
+          0.3, // Intensitas kemerahan diturunkan ke 30% agar kontrasnya tidak terlalu tajam
+    );
+
+    // Efek visual 'Bump' (Motor terpental/membesar sejenak akibat benturan)
+    final scaleEffect = ScaleEffect.by(
+      Vector2.all(1.15), // Membesar 15% dari ukuran asli
+      EffectController(duration: 0.15, alternate: true, repeatCount: 1),
+    );
+
+    _damageEffects.addAll([opacityEffect, colorEffect, scaleEffect]);
+    for (final effect in _damageEffects) {
+      add(effect);
+    }
   }
 
   @override

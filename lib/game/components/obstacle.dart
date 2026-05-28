@@ -37,6 +37,7 @@ class Obstacle extends PositionComponent with HasGameRef<KurirGame> {
   // Simpan gaya Text secara statis agar tidak membebani memori (Mencegah Lag)
   static final TextPaint _senPaint = TextPaint(
     style: const TextStyle(
+      fontFamily: 'PixelFont', // Font Retro Pixel
       color: Colors.redAccent, // Warna merah tegas
       fontSize: 22,
       fontWeight: FontWeight.w600, // Semi-bold, lebih clean dan mudah terbaca
@@ -188,9 +189,9 @@ class Obstacle extends PositionComponent with HasGameRef<KurirGame> {
         drawZLayer(spriteBelakang!, worldZ + depthZ);
 
         // 2. Render Bagian Tengah (Berulang dengan jarak SANGAT RAPAT)
-        // Kita ubah jarak antar potongan menjadi 25.0 agar layering-nya tumpang tindih padat.
-        // Semakin rapat, ilusi 3D (volume galian) akan semakin menyatu dan tidak terputus.
-        double layerSpacing = 25.0;
+        // [OPTIMALISASI FPS] Jarak layer direnggangkan sedikit ke 60.0 (Sebelumnya 25.0).
+        // Jarak 25.0 terlalu rapat dan memicu 96x draw-call untuk 1 rintangan terowongan panjang.
+        double layerSpacing = 60.0;
         int numMiddleTiles = max(1, (depthZ / layerSpacing).round());
         double step = depthZ / (numMiddleTiles + 1);
 
