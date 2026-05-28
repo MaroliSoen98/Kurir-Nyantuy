@@ -5,6 +5,7 @@ import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:math';
+import 'package:flame_audio/flame_audio.dart';
 import 'dart:ui' as ui;
 import 'package:vector_math/vector_math_64.dart' as vmath;
 import 'dart:typed_data';
@@ -96,6 +97,17 @@ class KurirGame extends FlameGame with PanDetector, KeyboardEvents {
       debugPrint("Beberapa gambar belum ada, dilewati untuk preload.");
     }
 
+    // Pra-muat aset audio agar tidak terjadi lag/frame drop saat pertama kali diputar
+    try {
+      FlameAudio.bgm.initialize();
+      await FlameAudio.audioCache.loadAll([
+        'bgm.mp3',
+        'menu_bgm.mp3',
+      ]); // Pastikan file ada di folder assets/audio/
+    } catch (e) {
+      debugPrint("Audio belum ada, dilewati untuk preload.");
+    }
+
     // Background Jalanan Perspektif Pseudo-3D
     add(RoadBackground());
 
@@ -135,6 +147,9 @@ class KurirGame extends FlameGame with PanDetector, KeyboardEvents {
 
     // Dihapus agar game loop tetap berjalan layaknya Live Background di Main Menu!
     // pauseEngine();
+
+    // Putar musik main menu saat game baru pertama kali dibuka
+    FlameAudio.bgm.play('menu_bgm.mp3', volume: 0.5);
   }
 
   // Fungsi untuk memulai game dan musik
@@ -154,6 +169,9 @@ class KurirGame extends FlameGame with PanDetector, KeyboardEvents {
 
     overlays.remove('Loading'); // Sembunyikan kembali layar loading
     overlays.add('PauseButton'); // Tampilkan tombol Pause di ujung layar
+
+    // Mulai putar musik latar secara berulang (looping) di background thread
+    FlameAudio.bgm.play('bgm.mp3', volume: 0.5);
   }
 
   void _spawnLamps(double dt) {
@@ -406,7 +424,7 @@ class KurirGame extends FlameGame with PanDetector, KeyboardEvents {
       return;
     }
 
-    final int pattern = _random.nextInt(7); // Acak 1 dari 7 Skenario Pola
+    final int pattern = _random.nextInt(8); // Acak 1 dari 8 Skenario Pola
 
     switch (pattern) {
       case 0: // POLA 0: Ular Koin (Melengkung) & Rintangan Kejutan
@@ -471,7 +489,6 @@ class KurirGame extends FlameGame with PanDetector, KeyboardEvents {
             worldX: -laneSpacing,
             worldZ: startZ,
             baseSize: Vector2(140, 120),
-            canDrift: false, // Dimatikan agar tidak nge-drift ke koin penuntun
           ),
         );
         // Barisan 3 koin penuntun untuk celah aman pertama
@@ -482,7 +499,6 @@ class KurirGame extends FlameGame with PanDetector, KeyboardEvents {
             worldX: laneSpacing,
             worldZ: startZ + 600.0, // Diperjauh agar tidak menumpuk
             baseSize: Vector2(140, 120),
-            canDrift: false,
           ),
         );
         // Barisan 3 koin penuntun untuk celah aman kedua
@@ -500,7 +516,6 @@ class KurirGame extends FlameGame with PanDetector, KeyboardEvents {
             worldX: 0.0,
             worldZ: startZ + 1200.0, // Diperjauh agar pemain punya waktu reaksi
             baseSize: Vector2(140, 120),
-            canDrift: false,
           ),
         );
         // Barisan 3 koin penuntun untuk celah aman ketiga
@@ -539,13 +554,12 @@ class KurirGame extends FlameGame with PanDetector, KeyboardEvents {
           addShield: spawnShield,
         );
 
-        // Jebakan emak-emak statis di ujung koin! Pemain harus sigap menghindar
+        // Jebakan emak-emak chaotic di ujung koin! Pemain harus sigap menghindar
         add(
           Obstacle(
             worldX: 0.0,
             worldZ: startZ + 1500.0, // Beri jeda lebih usai koin terakhir
             baseSize: Vector2(140, 120),
-            canDrift: false,
           ),
         );
         _skipSpawnTicks = 2;
@@ -561,7 +575,6 @@ class KurirGame extends FlameGame with PanDetector, KeyboardEvents {
                 worldX: l * laneSpacing,
                 worldZ: startZ,
                 baseSize: Vector2(140, 120),
-                canDrift: false,
               ),
             );
           } else {
@@ -606,7 +619,6 @@ class KurirGame extends FlameGame with PanDetector, KeyboardEvents {
                 worldX: l * laneSpacing,
                 worldZ: startZ,
                 baseSize: Vector2(140, 120),
-                canDrift: false,
               ),
             );
           }
@@ -654,12 +666,32 @@ class KurirGame extends FlameGame with PanDetector, KeyboardEvents {
             worldX: sideLane6 * laneSpacing,
             worldZ: startZ + 1500.0,
             baseSize: Vector2(140, 120),
-            canDrift:
-                false, // Matikan drift karena ini reflex run yang sangat cepat
           ),
         );
 
         _skipSpawnTicks = 1;
+        break;
+
+      case 7: // POLA 7: Solo Emak-emak Chaotic Murni (Bebas Nge-drift)
+        final double emakLane = (_random.nextInt(3) - 1).toDouble();
+        add(
+          Obstacle(
+            worldX: emakLane * laneSpacing,
+            worldZ: startZ,
+            baseSize: Vector2(140, 120),
+          ),
+        );
+
+        // Koin pancingan di lajur lain untuk mengecoh pemain
+        final double baitLane = (emakLane == 0.0)
+            ? (_random.nextBool() ? 1.0 : -1.0)
+            : 0.0;
+        _spawnCoinLine(
+          baitLane * laneSpacing,
+          startZ - 300.0, // Penuntun muncul sebelum ibu-ibu
+          4,
+          spacing: 150.0,
+        );
         break;
     }
   }
@@ -672,9 +704,9 @@ class KurirGame extends FlameGame with PanDetector, KeyboardEvents {
 
     // Sistem Penalti Koin (Koin Tumpah ala Sonic)
     if (currentCoins > 0) {
-      // Hitung jumlah koin riil yang tumpah (maksimal 50, atau sisa koin jika kurang dari 50)
-      int coinsToSpill = min(currentCoins, 50);
-      currentCoins -= 50;
+      // Hitung jumlah koin riil yang tumpah (maksimal 20, atau sisa koin jika kurang dari 20)
+      int coinsToSpill = min(currentCoins, 20);
+      currentCoins -= 20;
       if (currentCoins < 0) currentCoins = 0; // Pastikan koin tidak minus
 
       // Batasi visual partikel koin maksimal 30 agar tidak lag (Frame Drop) saat tumpah banyak
@@ -711,6 +743,9 @@ class KurirGame extends FlameGame with PanDetector, KeyboardEvents {
     totalCoinsPlayer += currentCoins;
     prefs.setInt('totalCoinsPlayer', totalCoinsPlayer); // Simpan ke storage
 
+    // Matikan musik saat mati
+    FlameAudio.bgm.stop();
+
     overlays.add('GameOver'); // Munculkan Widget Layar Penuh
   }
 
@@ -728,6 +763,14 @@ class KurirGame extends FlameGame with PanDetector, KeyboardEvents {
     _weatherTimer = 0.0;
     rainEffect.isRaining = false;
     rainEffect.intensity = 0.0; // Langsung hapus hujan saat mati
+
+    FlameAudio.bgm.stop(); // Pastikan audio dihentikan dan di-reset
+
+    // Jika kembali ke main menu, putar lagi musik main menu
+    if (isMainMenu) {
+      FlameAudio.bgm.play('menu_bgm.mp3', volume: 0.5);
+    }
+
     player.reset(); // Reset seluruh status pemain dan bersihkan efek
 
     // Bersihkan rintangan & koin dari sisa permainan sebelumnya
@@ -745,6 +788,7 @@ class KurirGame extends FlameGame with PanDetector, KeyboardEvents {
   void pauseGame() {
     if (isGameOver || isPaused) return;
     isPaused = true;
+    FlameAudio.bgm.pause(); // Jeda musik agar tidak bocor
     pauseEngine();
     overlays.remove('PauseButton');
     overlays.add('PauseMenu');
@@ -756,6 +800,8 @@ class KurirGame extends FlameGame with PanDetector, KeyboardEvents {
     isPaused = false;
     overlays.remove('PauseMenu');
     resumeEngine();
+    if (!isMainMenu)
+      FlameAudio.bgm.resume(); // Lanjutkan musik jika sedang bermain
     overlays.add('PauseButton');
   }
 

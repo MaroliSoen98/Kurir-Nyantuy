@@ -11,7 +11,6 @@ class Obstacle extends PositionComponent with HasGameRef<KurirGame> {
   final bool isSmall; // Membedakan rintangan ringan dan fatal
   final bool isFloating; // Membedakan rintangan melayang (Portal)
   final double depthZ; // Kedalaman rintangan ke belakang
-  final bool canDrift; // Penentu apakah emak-emak boleh pindah jalur
 
   Sprite? sprite;
   Sprite? spriteDepan;
@@ -24,11 +23,11 @@ class Obstacle extends PositionComponent with HasGameRef<KurirGame> {
   // Variabel untuk Obstacle Chaotic (Ibu-ibu / Angkot Nge-Drift)
   double targetWorldX;
   bool isEmakEmak = false;
+  bool _isTargetCalculated = false;
   bool hasTriggeredText = false; // Penanda kapan teks mulai muncul
   bool hasTriggeredMove = false;
   double textTriggerZ = 0; // Jarak Z kapan teks muncul
   double moveTriggerZ = 0;
-  double blinkTimer = 0;
   String? memeText;
 
   // Path untuk menggambar ekor bubble chat (Dibuat sekali untuk cegah memori bocor)
@@ -38,9 +37,9 @@ class Obstacle extends PositionComponent with HasGameRef<KurirGame> {
   static final TextPaint _senPaint = TextPaint(
     style: const TextStyle(
       fontFamily: 'PixelFont', // Font Retro Pixel
-      color: Colors.redAccent, // Warna merah tegas
+      color: Colors.black, // Warna hitam pekat ala komik
       fontSize: 22,
-      fontWeight: FontWeight.w600, // Semi-bold, lebih clean dan mudah terbaca
+      fontWeight: FontWeight.w900, // Sangat tebal biar makin jelas
       letterSpacing: 1.0,
     ),
   );
@@ -76,7 +75,6 @@ class Obstacle extends PositionComponent with HasGameRef<KurirGame> {
     this.isSmall = false,
     this.isFloating = false,
     this.depthZ = 0.0,
-    this.canDrift = true,
   }) : targetWorldX = worldX,
        super(anchor: Anchor.bottomCenter) {
     if (isFloating) {
@@ -84,26 +82,18 @@ class Obstacle extends PositionComponent with HasGameRef<KurirGame> {
     }
 
     // Logika Emak-emak Chaotic (Pindah Jalur Mendadak)
-    if (!isSmall && !isFloating && canDrift) {
-      if (_sharedRandom.nextDouble() < 0.50) {
-        // 50% kemungkinan obstacle besar nge-drift, 50% tetap lurus (Sangat tak tertebak!)
+    if (!isSmall && !isFloating) {
+      double roll = _sharedRandom.nextDouble();
+
+      if (roll < 0.95) {
+        // 95% Kemungkinan bergerak kacau, sisa 5% cuma jalan lurus
         isEmakEmak = true;
-        int currentLane = (worldX / 180.0).round();
-        List<int> possibleLanes = [-1, 0, 1]..remove(currentLane);
 
-        // Pilih lajur target secara acak
-        int targetLane =
-            possibleLanes[_sharedRandom.nextInt(possibleLanes.length)];
-        targetWorldX = targetLane * 180.0;
+        // Teks dipaksa muncul dari jarak terjauh secara instan (bertahan ~2 hingga 3 detik)
+        textTriggerZ = worldZ;
 
-        // Jarak (Z) teks muncul LEBIH AWAL dari pergerakan
-        textTriggerZ = 1600.0 + _sharedRandom.nextDouble() * 300.0;
-
-        // Pergerakan belok terjadi SETELAH teks muncul (Sekitar 500 unit lebih dekat ke layar)
-        moveTriggerZ = textTriggerZ - 500.0;
-
-        // Efek Meme Absurd: Tulisan "Sen" selalu kebalikan dari arah aslinya
-        memeText = (targetWorldX > worldX) ? "KIRI" : "KANAN";
+        // Rintangan baru akan dieksekusi belok saat posisinya lebih jauh (Jarak 1100) agar pemain siap!
+        moveTriggerZ = 1100.0;
       }
     }
 
@@ -228,17 +218,20 @@ class Obstacle extends PositionComponent with HasGameRef<KurirGame> {
       }
     }
 
-    // Render efek pop-up teks meme yang nge-blink saat belok
+    // Teks muncul jelas dan HILANG tepat saat dia mulai belok (!hasTriggeredMove)
     if (isEmakEmak &&
         hasTriggeredText &&
-        blinkTimer < 0.2 &&
+        !hasTriggeredMove &&
         memeText != null) {
       canvas.save();
-      // Geser titik render teks ke atas kepala karakter (ditinggikan agar tidak menutupi gambar motor)
-      canvas.translate(size.x / 2, -60);
 
       // Sesuaikan skala teks dengan proyeksi 3D agar terlihat natural
       final textScale = max(0.4, gameRef.getScale(worldZ));
+
+      // Geser titik render teks ke atas kepala karakter.
+      // Dikalikan dengan textScale agar jarak pop-up merapat dan tidak terbang terlalu tinggi saat jauh.
+      canvas.translate(size.x / 2, -35 * textScale);
+
       canvas.scale(textScale);
 
       // Menggambar Bubble Chat (Kotak Melengkung Putih)
@@ -276,6 +269,123 @@ class Obstacle extends PositionComponent with HasGameRef<KurirGame> {
   void update(double dt) {
     super.update(dt);
 
+    // Logika Pintar: Kalkulasi lajur pindah ibu-ibu secara dinamis untuk menghindari tabrakan
+    if (isEmakEmak && !_isTargetCalculated) {
+      // Temukan semua rintangan di kedalaman Z yang sama (Satu baris / pattern yang sama)
+      List<Obstacle> rowObstacles = [];
+      for (final child in gameRef.children) {
+        if (child is Obstacle && !child.isRemoving) {
+          if ((child.worldZ - this.worldZ).abs() < 100.0) {
+            rowObstacles.add(child);
+          }
+        }
+      }
+
+      // Ambil yang isEmakEmak dan urutkan posisinya dari kiri ke kanan
+      List<Obstacle> emaks = rowObstacles.where((o) => o.isEmakEmak).toList();
+      emaks.sort((a, b) => a.worldX.compareTo(b.worldX));
+
+      if (emaks.length == 1) {
+        // --- Skenario 1 Ibu-ibu saja (Hanya Pindah 1 Lajur) ---
+        int currentLane = (worldX / 180.0).round();
+        List<int> availableLanes = [-1, 0, 1];
+        availableLanes.remove(currentLane);
+
+        // Hindari lajur posisi rintangan diam (tembok / galian)
+        for (final obs in rowObstacles) {
+          if (!obs.isEmakEmak) {
+            int obsLane = (obs.worldX / 180.0).round();
+            availableLanes.remove(obsLane);
+          }
+        }
+
+        // Batasi pergerakan hanya sejauh 1 lajur
+        List<int> oneLaneMoves = availableLanes
+            .where((l) => (l - currentLane).abs() == 1)
+            .toList();
+
+        if (oneLaneMoves.isNotEmpty) {
+          int targetLane =
+              oneLaneMoves[_sharedRandom.nextInt(oneLaneMoves.length)];
+          targetWorldX = targetLane * 180.0;
+        } else {
+          isEmakEmak = false; // Batal nge-drift jika jalan terhalang
+        }
+
+        _isTargetCalculated = true;
+        if (isEmakEmak) {
+          memeText = (targetWorldX > worldX) ? "KIRI" : "KANAN";
+        }
+      } else if (emaks.length == 2) {
+        // --- Skenario 2 Ibu-ibu Bersebelahan ---
+        Obstacle leftEmak = emaks[0];
+        Obstacle rightEmak = emaks[1];
+
+        // Pastikan kalkulasi hanya dilakukan sekali saat salah satu dari mereka pertama kali update
+        if (!leftEmak._isTargetCalculated || !rightEmak._isTargetCalculated) {
+          int lCurrent = (leftEmak.worldX / 180.0).round();
+          int rCurrent = (rightEmak.worldX / 180.0).round();
+
+          if (lCurrent == -1 && rCurrent == 1) {
+            // Skenario Kiri & Kanan: Salah satu ke tengah, satu diam.
+            if (_sharedRandom.nextBool()) {
+              leftEmak.targetWorldX = 0.0;
+              rightEmak.isEmakEmak = false;
+              rightEmak.targetWorldX = 180.0;
+            } else {
+              rightEmak.targetWorldX = 0.0;
+              leftEmak.isEmakEmak = false;
+              leftEmak.targetWorldX = -180.0;
+            }
+          } else if (lCurrent == -1 && rCurrent == 0) {
+            // Skenario Kiri & Tengah: Bergerak ke kanan bersama, atau hanya tengah yang ke kanan.
+            if (_sharedRandom.nextBool()) {
+              leftEmak.targetWorldX = 0.0;
+              rightEmak.targetWorldX = 180.0;
+            } else {
+              leftEmak.isEmakEmak = false;
+              leftEmak.targetWorldX = -180.0;
+              rightEmak.targetWorldX = 180.0;
+            }
+          } else if (lCurrent == 0 && rCurrent == 1) {
+            // Skenario Tengah & Kanan: Bergerak ke kiri bersama, atau hanya tengah yang ke kiri.
+            if (_sharedRandom.nextBool()) {
+              leftEmak.targetWorldX = -180.0;
+              rightEmak.targetWorldX = 0.0;
+            } else {
+              leftEmak.targetWorldX = -180.0;
+              rightEmak.isEmakEmak = false;
+              rightEmak.targetWorldX = 180.0;
+            }
+          } else {
+            // Default aman
+            leftEmak.isEmakEmak = false;
+            rightEmak.isEmakEmak = false;
+          }
+
+          leftEmak._isTargetCalculated = true;
+          rightEmak._isTargetCalculated = true;
+
+          if (leftEmak.isEmakEmak)
+            leftEmak.memeText = (leftEmak.targetWorldX > leftEmak.worldX)
+                ? "KIRI"
+                : "KANAN";
+          if (rightEmak.isEmakEmak)
+            rightEmak.memeText = (rightEmak.targetWorldX > rightEmak.worldX)
+                ? "KIRI"
+                : "KANAN";
+        }
+      } else if (emaks.length >= 3) {
+        // Jika 3 lajur penuh dengan emak-emak, batalkan semua agar pemain bisa lewat dari celah lompatan atas
+        for (var emak in emaks) {
+          if (!emak._isTargetCalculated) {
+            emak.isEmakEmak = false;
+            emak._isTargetCalculated = true;
+          }
+        }
+      }
+    }
+
     // Gerakkan rintangan mendekat ke posisi kamera (Z berkurang)
     worldZ -= gameRef.gameSpeed * dt;
 
@@ -293,12 +403,6 @@ class Obstacle extends PositionComponent with HasGameRef<KurirGame> {
 
       if (worldZ < moveTriggerZ) {
         hasTriggeredMove = true;
-      }
-
-      // Teks sudah mulai berkedip SEBELUM motor belok
-      if (hasTriggeredText) {
-        blinkTimer += dt;
-        if (blinkTimer > 0.4) blinkTimer = 0;
       }
 
       if (hasTriggeredMove) {

@@ -36,6 +36,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   flame: ^1.37.0
   shared_preferences: ^2.5.5
+  flame_audio: ^2.1.8
 
 dev_dependencies:
   flutter_test:
@@ -56,6 +57,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/ # Pastikan file clouds.png ada di dalam folder ini
+    - assets/audio/
 
   fonts:
     - family: LuckiestGuy
